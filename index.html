@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personal Assistant</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: system-ui;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      input,
+      select,
+      button,
+      textarea {
+        width: 100%;
+        padding: 8px;
+        margin: 4px 0;
+      }
+      textarea {
+        height: 80px;
+        resize: none;
+      }
+      #messages {
+        height: 400px;
+        overflow-y: auto;
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin: 10px 0;
+      }
+      .msg {
+        margin: 8px 0;
+      }
+      .msg.user {
+        color: #0066cc;
+      }
+      .msg.assistant {
+        color: #333;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Personal Assistant</h1>
+    <input id="apiKey" type="password" placeholder="API Key" />
+    <input id="category" placeholder="Category" />
+    <input id="topic" placeholder="Topic" />
+    <textarea id="message" placeholder="Message"></textarea>
+    <button onclick="send()">Send</button>
+    <button onclick="loadCategories()">Load Categories</button>
+    <div id="messages"></div>
+    <script>
+      const base = location.origin
+      const msgs = document.getElementById("messages")
+      const apiKey = document.getElementById("apiKey")
+      const category = document.getElementById("category")
+      const topic = document.getElementById("topic")
+      const message = document.getElementById("message")
+
+      async function req(method, path, body) {
+        const r = await fetch(base + path, {
+          method,
+          headers: { Authorization: `Bearer ${apiKey.value}`, "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+        })
+        return r.json()
+      }
+
+      function addMsg(role, text) {
+        msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${text}</div>`
+        msgs.scrollTop = msgs.scrollHeight
+      }
+
+      async function send() {
+        if (!apiKey.value || !category.value || !topic.value || !message.value) return alert("Fill all fields")
+        addMsg("user", message.value)
+        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value })
+        addMsg("assistant", res.response || res.error)
+        message.value = ""
+      }
+
+      async function loadCategories() {
+        const res = await req("GET", "/categories")
+        msgs.innerHTML = res
+          .map(
+            (c) =>
+              `<div><b>${c.name}</b> (${c.summary || "no summary"})<br>` +
+              c.topics.map((t) => `&nbsp;&nbsp;• ${t.name}: ${t.summary || "no summary"}`).join("<br>") +
+              "</div>",
+          )
+          .join("<hr>")
+      }
+    </script>
+  </body>
+</html>

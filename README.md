@@ -8,6 +8,11 @@ A personal LLM assistant built on Cloudflare Workers with Durable Objects and SQ
 - **Context-Aware**: Maintains summary context for each topic
 - **Daily Summaries**: Automatically updates topic summaries daily via cron
 - **API Key Auth**: Secure access with Bearer token authentication
+- **Web Interface**: Simple HTML UI at root path
+
+## Web Interface
+
+Visit `https://your-worker.workers.dev/` to use the built-in chat UI.
 
 ## API Endpoints
 
