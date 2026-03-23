@@ -115,10 +115,10 @@ export class AssistantDurableObject extends DurableObject {
       ).one();
       console.log(`[INFO][${stage}] Topic resolved: id=${topicRow.id}, name=${topic}`);
 
-      const existingConversation = this.#db.exec(
+      const [existingConversation] = this.#db.exec(
         `SELECT id, messages FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp DESC LIMIT 1`,
         topicRow.id
-      ).one();
+      ).toArray();
 
       let conversationId;
       let messages = [];
@@ -141,7 +141,7 @@ export class AssistantDurableObject extends DurableObject {
       messages.push({ role: "user", content: userMessage });
 
       const systemPrompt = [
-        `You are a personal assistant helping with: ${category} / ${topic}.`,
+        `Your client values succinct and direct outputs without extra formatting, warnings, and politeness.You are a personal assistant helping with: ${category} / ${topic}.`, 
         topicRow.summary ? `Context summary: ${topicRow.summary}` : null
       ].filter(Boolean).join("\n");
 
@@ -152,7 +152,15 @@ export class AssistantDurableObject extends DurableObject {
         ]
       });
 
-      const assistantMessage = aiResponse?.response;
+      console.log(`[DEBUG][${stage}] AI response:`, JSON.stringify(aiResponse));
+
+      let assistantMessage = aiResponse?.response;
+      if (!assistantMessage && aiResponse?.choices?.[0]?.message?.content) {
+        assistantMessage = aiResponse.choices[0].message.content;
+      }
+      if (!assistantMessage && typeof aiResponse === "string") {
+        assistantMessage = aiResponse;
+      }
       if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
 
       messages.push({ role: "assistant", content: assistantMessage });
