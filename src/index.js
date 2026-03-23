@@ -288,6 +288,12 @@ export default {
       const id = env.ASSISTANT_DO.idFromName("singleton");
       const stub = env.ASSISTANT_DO.get(id);
 
+      const authHeader = request.headers.get("Authorization");
+      const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+      if (!apiKey || apiKey !== env.API_KEY) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
       if (request.method === "POST" && url.pathname === "/chat") {
         let body;
         try { body = await request.json(); } catch {
