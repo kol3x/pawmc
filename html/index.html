@@ -79,9 +79,36 @@
       .msg.assistant ul, .msg.assistant ol { padding-left: 20px; }
       .msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { margin-top: 0.5em; }
       .msg.assistant blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
+      #sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 200px;
+        height: 100%;
+        background: var(--input-bg);
+        border-right: 1px solid var(--border);
+        padding: 10px;
+        overflow-y: auto;
+      }
+      #main { margin-left: 210px; max-width: 900px; }
+      .conv-item {
+        padding: 8px;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        margin: 4px 0;
+        border-radius: 4px;
+      }
+      .conv-item:hover { background: var(--code-bg); }
+      .conv-item.active { background: var(--user); color: #fff; }
     </style>
   </head>
   <body>
+    <div id="sidebar">
+      <h3>Conversations</h3>
+      <button onclick="newConversation()">+ New</button>
+      <div id="conversations"></div>
+    </div>
+    <div id="main">
     <h1>Personal Assistant</h1>
     <input id="apiKey" type="password" placeholder="API Key" />
     <input id="category" placeholder="Category" />
@@ -90,6 +117,7 @@
     <button onclick="send()">Send</button>
     <button onclick="loadCategories()">Load Categories</button>
     <div id="messages"></div>
+    </div>
     <script>
       const base = location.origin
       const msgs = document.getElementById("messages")
@@ -102,6 +130,78 @@
       if (savedKey) apiKey.value = savedKey
 
       apiKey.addEventListener("change", () => localStorage.setItem("apiKey", apiKey.value))
+
+      let conversations = JSON.parse(localStorage.getItem("conversations") || "[]")
+      let currentConvId = null
+
+      function saveConversations() {
+        localStorage.setItem("conversations", JSON.stringify(conversations))
+        renderConversations()
+      }
+
+      function renderConversations() {
+        const container = document.getElementById("conversations")
+        container.innerHTML = conversations
+          .map(
+            (c) =>
+              `<div class="conv-item ${c.id === currentConvId ? "active" : ""}" onclick="loadConversation(${c.id})">${c.category || "New"} / ${c.topic || "New"}</div>`,
+          )
+          .join("")
+      }
+
+      function newConversation() {
+        const conv = { id: Date.now(), category: "", topic: "", messages: [] }
+        conversations.unshift(conv)
+        currentConvId = conv.id
+        category.value = ""
+        topic.value = ""
+        msgs.innerHTML = ""
+        saveConversations()
+      }
+
+      function loadConversation(id) {
+        const conv = conversations.find((c) => c.id === id)
+        if (!conv) return
+        currentConvId = id
+        category.value = conv.category || ""
+        topic.value = conv.topic || ""
+        msgs.innerHTML = conv.messages
+          .map((m) => `<div class="msg ${m.role}"><b>${m.role}:</b> ${m.role === "assistant" ? parseMarkdown(m.text) : m.text}</div>`)
+          .join("")
+        msgs.scrollTop = msgs.scrollHeight
+        renderConversations()
+      }
+
+      function addMsg(role, text) {
+        const content = role === 'assistant' ? parseMarkdown(text) : text
+        msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
+        msgs.scrollTop = msgs.scrollHeight
+        const conv = conversations.find((c) => c.id === currentConvId)
+        if (conv) {
+          conv.messages.push({ role, text })
+          conv.category = category.value
+          conv.topic = topic.value
+          saveConversations()
+        }
+      }
+
+      category.addEventListener("change", () => {
+        const conv = conversations.find((c) => c.id === currentConvId)
+        if (conv) {
+          conv.category = category.value
+          saveConversations()
+        }
+      })
+      topic.addEventListener("change", () => {
+        const conv = conversations.find((c) => c.id === currentConvId)
+        if (conv) {
+          conv.topic = topic.value
+          saveConversations()
+        }
+      })
+
+      if (conversations.length === 0) newConversation()
+      else loadConversation(conversations[0].id)
 
       async function req(method, path, body) {
         const r = await fetch(base + path, {
@@ -128,12 +228,6 @@
         return text
       }
 
-      function addMsg(role, text) {
-        const content = role === 'assistant' ? parseMarkdown(text) : text
-        msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
-        msgs.scrollTop = msgs.scrollHeight
-      }
-
       async function send() {
         if (!apiKey.value || !category.value || !topic.value || !message.value) return alert("Fill all fields")
         addMsg("user", message.value)
@@ -148,7 +242,7 @@
           .map(
             (c) =>
               `<div><b>${c.name}</b> (${c.summary || "no summary"})<br>` +
-              c.topics.map((t) => `&nbsp;&nbsp;• ${t.name}: ${t.summary || "no summary"}`).join("<br>") +
+              c.topics.map((t) => `* ${t.name}: ${t.summary || "no summary"}`).join("<br>") +
               "</div>",
           )
           .join("<hr>")
