@@ -154,10 +154,7 @@ export class AssistantDurableObject extends DurableObject {
 
       console.log(`[DEBUG][${stage}] AI response:`, JSON.stringify(aiResponse));
 
-      let assistantMessage = aiResponse?.response;
-      if (!assistantMessage && aiResponse?.choices?.[0]?.message?.content) {
-        assistantMessage = aiResponse.choices[0].message.content;
-      }
+      let assistantMessage = aiResponse?.choices?.[0]?.message?.content;
       if (!assistantMessage && typeof aiResponse === "string") {
         assistantMessage = aiResponse;
       }
@@ -214,6 +211,8 @@ export class AssistantDurableObject extends DurableObject {
          JOIN categories c ON c.id = t.category_id`
       ).toArray()];
 
+      console.log(`[INFO][${stage}] Processing ${topics.length} topics`);
+
       for (const topic of topics) {
         try {
           const conversations = [...this.#db.exec(
@@ -221,7 +220,10 @@ export class AssistantDurableObject extends DurableObject {
             topic.id
           ).toArray()];
 
-          if (!conversations.length) continue;
+          if (!conversations.length) {
+            console.log(`[INFO][${stage}] Skipping topic=${topic.id}: no conversations`);
+            continue;
+          }
 
           const allMessages = conversations.flatMap(conv => {
             try { return JSON.parse(conv.messages); } catch {
@@ -230,12 +232,17 @@ export class AssistantDurableObject extends DurableObject {
             }
           });
 
-          if (!allMessages.length) continue;
+          if (!allMessages.length) {
+            console.log(`[INFO][${stage}] Skipping topic=${topic.id}: no messages`);
+            continue;
+          }
 
           const summaryPrompt = [
             topic.summary ? `Existing summary: ${topic.summary}` : null,
             `Summarize the following conversation history for context retention. Be concise and focus on key information, decisions, and facts. Category: ${topic.category_name}, Topic: ${topic.name}.`
           ].filter(Boolean).join("\n");
+
+          console.log(`[INFO][${stage}] Generating summary for topic: id=${topic.id}, name=${topic.name}`);
 
           const aiResponse = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
             messages: [
@@ -244,7 +251,9 @@ export class AssistantDurableObject extends DurableObject {
             ]
           });
 
-          const newSummary = aiResponse?.response;
+          console.log(`[DEBUG][${stage}] AI response for topic=${topic.id}:`, JSON.stringify(aiResponse));
+
+          const newSummary = aiResponse?.choices?.[0]?.message?.content;
           if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for topic=${topic.id}`);
 
           this.#db.exec(
@@ -278,6 +287,8 @@ export class AssistantDurableObject extends DurableObject {
          FROM categories c`
       ).toArray()];
 
+      console.log(`[INFO][${stage}] Processing ${categories.length} categories`);
+
       for (const category of categories) {
         try {
           const topicsWithSummaries = [...this.#db.exec(
@@ -302,6 +313,8 @@ export class AssistantDurableObject extends DurableObject {
             `Topic summaries:\n${topicSummariesText}`
           ].filter(Boolean).join("\n\n");
 
+          console.log(`[INFO][${stage}] Generating summary for category: id=${category.id}, name=${category.name}, topics=${topicsWithSummaries.length}`);
+
           const aiResponse = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
             messages: [
               { role: "system", content: summaryPrompt },
@@ -309,7 +322,9 @@ export class AssistantDurableObject extends DurableObject {
             ]
           });
 
-          const newSummary = aiResponse?.response;
+          console.log(`[DEBUG][${stage}] AI response for category=${category.id}:`, JSON.stringify(aiResponse));
+
+          const newSummary = aiResponse?.choices?.[0]?.message?.content;
           if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for category=${category.id}`);
 
           this.#db.exec(
@@ -411,6 +426,7 @@ export default {
       if (request.method === "POST" && url.pathname === "/update-summaries") {
         console.log(`[INFO][${stage}] Manual summary update triggered`);
         await stub.updateAllSummaries();
+        console.log(`[INFO][${stage}] Manual summary update completed`);
         return Response.json({ success: true });
       }
 
