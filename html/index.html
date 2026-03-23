@@ -9,11 +9,35 @@
         margin: 0;
         padding: 0;
       }
+      :root {
+        --bg: #fff;
+        --text: #333;
+        --border: #ccc;
+        --input-bg: #fff;
+        --user: #4da3ff;
+        --code-bg: #f4f4f4;
+        --code-text: #333;
+        --blockquote: #666;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1a1a1a;
+          --text: #e0e0e0;
+          --border: #444;
+          --input-bg: #2a2a2a;
+          --user: #4da3ff;
+          --code-bg: #2a2a2a;
+          --code-text: #e0e0e0;
+          --blockquote: #999;
+        }
+      }
       body {
         font-family: system-ui;
-        max-width: 600px;
+        max-width: 900px;
         margin: 0 auto;
         padding: 20px;
+        background: var(--bg);
+        color: var(--text);
       }
       input,
       select,
@@ -22,27 +46,39 @@
         width: 100%;
         padding: 8px;
         margin: 4px 0;
+        background: var(--input-bg);
+        color: var(--text);
+        border: 1px solid var(--border);
       }
       textarea {
         height: 80px;
         resize: none;
       }
       #messages {
-        height: 400px;
+        height: 500px;
         overflow-y: auto;
-        border: 1px solid #ccc;
+        border: 1px solid var(--border);
         padding: 10px;
         margin: 10px 0;
+        background: var(--bg);
       }
       .msg {
         margin: 8px 0;
+        line-height: 1.5;
       }
       .msg.user {
-        color: #0066cc;
+        color: var(--user);
       }
       .msg.assistant {
-        color: #333;
+        color: var(--text);
       }
+      .msg.assistant p { margin: 0.5em 0; }
+      .msg.assistant code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
+      .msg.assistant pre { background: var(--code-bg); padding: 10px; border-radius: 5px; overflow-x: auto; }
+      .msg.assistant pre code { background: none; padding: 0; }
+      .msg.assistant ul, .msg.assistant ol { padding-left: 20px; }
+      .msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { margin-top: 0.5em; }
+      .msg.assistant blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
     </style>
   </head>
   <body>
@@ -71,8 +107,25 @@
         return r.json()
       }
 
+      function parseMarkdown(text) {
+        text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
+        text = text.replace(/`(.+?)`/g, '<code>$1</code>')
+        text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+        text = text.replace(/^\* (.+)$/gm, '<li>$1</li>')
+        text = text.replace(/<\/li>\n<li>/g, '</li>\n<li>')
+        text = text.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+        text = text.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+        text = text.replace(/\n/g, '<br>')
+        return text
+      }
+
       function addMsg(role, text) {
-        msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${text}</div>`
+        const content = role === 'assistant' ? parseMarkdown(text) : text
+        msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
         msgs.scrollTop = msgs.scrollHeight
       }
 
