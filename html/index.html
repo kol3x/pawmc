@@ -98,6 +98,11 @@
       const topic = document.getElementById("topic")
       const message = document.getElementById("message")
 
+      const savedKey = localStorage.getItem("apiKey")
+      if (savedKey) apiKey.value = savedKey
+
+      apiKey.addEventListener("change", () => localStorage.setItem("apiKey", apiKey.value))
+
       async function req(method, path, body) {
         const r = await fetch(base + path, {
           method,
