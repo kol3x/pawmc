@@ -1,0 +1,30 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "personal-assistant",
+	"main": "src/index.js",
+	"compatibility_date": "2026-03-17",
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "AssistantDurableObject",
+				"name": "ASSISTANT_DO"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"new_sqlite_classes": ["AssistantDurableObject"],
+			"tag": "v1"
+		}
+	],
+	"ai": {
+		"binding": "AI"
+	},
+	"triggers": {
+		"crons": ["0 0 * * *"]
+	},
+	"observability": {
+		"enabled": true
+	},
+	"compatibility_flags": ["nodejs_compat"]
+}
