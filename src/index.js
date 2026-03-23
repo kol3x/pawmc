@@ -200,11 +200,13 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
   /**
-   * Processes unsummarized conversations and updates summaries. Meant to run daily or on demand.
+   * Processes all conversations for each topic and regenerates their summaries using AI.
+   * This function iterates through every topic, aggregates its conversation messages,
+   * and generates a concise summary focusing on key information, decisions, and facts.
    * @returns {Promise<void>}
    */
-  async updateSummaries() {
-    const stage = "updateSummaries";
+  async updateTopicSummaries() {
+    const stage = "updateTopicSummaries";
     try {
       const topics = [...this.#db.exec(
         `SELECT t.id, t.name, t.summary, c.name as category_name
@@ -254,7 +256,91 @@ export class AssistantDurableObject extends DurableObject {
           console.error(`[ERROR][${stage}] Failed to update summary for topic=${topic.id}: ${err.message}`);
         }
       }
-      console.log(`[INFO][${stage}] Summary update complete: processed ${topics.length} topics`);
+      console.log(`[INFO][${stage}] Topic summaries update complete: processed ${topics.length} topics`);
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Regenerates summaries for all categories based on their topic summaries.
+   * For each category, this function collects all non-empty topic summaries and
+   * generates a consolidated category-level summary using AI. The category summary
+   * provides a high-level overview of all topics within that category.
+   * @returns {Promise<void>}
+   */
+  async updateCategorySummaries() {
+    const stage = "updateCategorySummaries";
+    try {
+      const categories = [...this.#db.exec(
+        `SELECT c.id, c.name, c.summary
+         FROM categories c`
+      ).toArray()];
+
+      for (const category of categories) {
+        try {
+          const topicsWithSummaries = [...this.#db.exec(
+            `SELECT t.id, t.name, t.summary
+             FROM topics t
+             WHERE t.category_id = ? AND t.summary != ''`,
+            category.id
+          ).toArray()];
+
+          if (!topicsWithSummaries.length) {
+            console.log(`[INFO][${stage}] Skipping category=${category.id}: no topics with summaries`);
+            continue;
+          }
+
+          const topicSummariesText = topicsWithSummaries
+            .map(t => `- ${t.name}: ${t.summary}`)
+            .join("\n\n");
+
+          const summaryPrompt = [
+            category.summary ? `Existing category summary: ${category.summary}` : null,
+            `Generate a consolidated summary for the "${category.name}" category based on the following topic summaries. The category summary should provide a high-level overview of all topics within this category, highlighting common themes and key areas of focus.`,
+            `Topic summaries:\n${topicSummariesText}`
+          ].filter(Boolean).join("\n\n");
+
+          const aiResponse = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
+            messages: [
+              { role: "system", content: summaryPrompt },
+              { role: "user", content: "Generate the category summary." }
+            ]
+          });
+
+          const newSummary = aiResponse?.response;
+          if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for category=${category.id}`);
+
+          this.#db.exec(
+            `UPDATE categories SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
+            newSummary, category.id
+          );
+          console.log(`[INFO][${stage}] Summary updated: category=${category.id}, name=${category.name}, topics=${topicsWithSummaries.length}`);
+        } catch (err) {
+          console.error(`[ERROR][${stage}] Failed to update summary for category=${category.id}: ${err.message}`);
+        }
+      }
+      console.log(`[INFO][${stage}] Category summaries update complete: processed ${categories.length} categories`);
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Updates summaries for both topics and categories in sequence.
+   * This is the main entry point for daily summary generation. It first updates
+   * all topic summaries based on their conversations, then updates all category
+   * summaries based on the newly generated topic summaries.
+   * @returns {Promise<void>}
+   */
+  async updateAllSummaries() {
+    const stage = "updateAllSummaries";
+    try {
+      await this.updateTopicSummaries();
+      await this.updateCategorySummaries();
+      console.log(`[INFO][${stage}] All summaries updated successfully`);
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -275,7 +361,7 @@ export default {
     try {
       const id = env.ASSISTANT_DO.idFromName("singleton");
       const stub = env.ASSISTANT_DO.get(id);
-      await stub.updateSummaries();
+      await stub.updateAllSummaries();
       console.log(`[INFO][${stage}] Scheduled summary update complete`);
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
@@ -324,7 +410,7 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/update-summaries") {
         console.log(`[INFO][${stage}] Manual summary update triggered`);
-        await stub.updateSummaries();
+        await stub.updateAllSummaries();
         return Response.json({ success: true });
       }
 
