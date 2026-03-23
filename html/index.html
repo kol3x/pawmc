@@ -89,6 +89,7 @@
         border-right: 1px solid var(--border);
         padding: 10px;
         overflow-y: auto;
+        text-align: center;
       }
       #main { margin-left: 210px; max-width: 900px; }
       .conv-item {
@@ -97,6 +98,7 @@
         border: 1px solid var(--border);
         margin: 4px 0;
         border-radius: 4px;
+        text-align: center;
       }
       .conv-item:hover { background: var(--code-bg); }
       .conv-item.active { background: var(--user); color: #fff; }
@@ -105,7 +107,9 @@
   <body>
     <div id="sidebar">
       <h3>Conversations</h3>
-      <button onclick="newConversation()">+ New</button>
+      <button onclick="newConversation()">Start conversation</button>
+      <button onclick="updateSummaries()">Update Summaries</button>
+      <button onclick="loadCategories()">Load Categories</button>
       <div id="conversations"></div>
     </div>
     <div id="main">
@@ -115,7 +119,6 @@
     <input id="topic" placeholder="Topic" />
     <textarea id="message" placeholder="Message"></textarea>
     <button onclick="send()">Send</button>
-    <button onclick="loadCategories()">Load Categories</button>
     <div id="messages"></div>
     </div>
     <script>
@@ -143,8 +146,10 @@
         const container = document.getElementById("conversations")
         container.innerHTML = conversations
           .map(
-            (c) =>
-              `<div class="conv-item ${c.id === currentConvId ? "active" : ""}" onclick="loadConversation(${c.id})">${c.category || "New"} / ${c.topic || "New"}</div>`,
+            (c) => {
+              const label = [c.category, c.topic].filter(Boolean).join(" / ");
+              return `<div class="conv-item ${c.id === currentConvId ? "active" : ""}" onclick="loadConversation(${c.id})">${label || "New"}</div>`;
+            },
           )
           .join("")
       }
@@ -246,6 +251,17 @@
               "</div>",
           )
           .join("<hr>")
+      }
+
+      async function updateSummaries() {
+        msgs.innerHTML = "Updating summaries..."
+        const res = await req("POST", "/update-summaries")
+        if (res.success) {
+          msgs.innerHTML = "Summaries updated!"
+          loadCategories()
+        } else {
+          msgs.innerHTML = `Error: ${res.error}`
+        }
       }
     </script>
   </body>
