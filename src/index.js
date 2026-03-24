@@ -21,37 +21,32 @@ import { DurableObject } from "cloudflare:workers";
  * @augments {DurableObject}
  * @property {DurableObjectState} state
  * @property {WorkerEnvironment} env
- *
- * ## SQLite Schema (Durable Object Storage)
- * ```sql
- * CREATE TABLE IF NOT EXISTS categories (
- *   id INTEGER PRIMARY KEY AUTOINCREMENT,
- *   name TEXT NOT NULL UNIQUE,
- *   summary TEXT NOT NULL DEFAULT '',
- *   updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))
- * );
- * 
- * CREATE TABLE IF NOT EXISTS topics (
- *   id INTEGER PRIMARY KEY AUTOINCREMENT,
- *   category_id INTEGER NOT NULL,
- *   name TEXT NOT NULL,
- *   summary TEXT NOT NULL DEFAULT '',
- *   updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
- *   UNIQUE(category_id, name),
- *   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
- * );
- * 
- * CREATE TABLE IF NOT EXISTS conversations (
- *   id INTEGER PRIMARY KEY AUTOINCREMENT,
- *   topic_id INTEGER NOT NULL,
- *   messages TEXT NOT NULL DEFAULT '[]',
- *   created_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
- *   FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
- * );
- * ```
  */
 export class AssistantDurableObject extends DurableObject {
   #db;
+
+  #runAI(systemPrompt, userContent) {
+    return this.env.AI.run(this.env.AI_MODEL, {
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent }
+      ]
+    }).then(res => {
+      const content = res?.choices?.[0]?.message?.content;
+      if (!content && typeof res === "string") return res;
+      if (!content) throw new Error("AI returned empty response");
+      return content;
+    });
+  }
+
+  #parseMessages(conversations) {
+    return conversations.flatMap(conv => {
+      try { return JSON.parse(conv.messages); } catch {
+        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`);
+        return [];
+      }
+    });
+  }
 
   constructor(state, env) {
     super(state, env);
@@ -239,12 +234,7 @@ export class AssistantDurableObject extends DurableObject {
             continue;
           }
 
-          const allMessages = conversations.flatMap(conv => {
-            try { return JSON.parse(conv.messages); } catch {
-              console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conv.id}`);
-              return [];
-            }
-          });
+          const allMessages = this.#parseMessages(conversations);
 
           if (!allMessages.length) {
             console.log(`[INFO][${stage}] Skipping topic=${topic.id}: no messages`);
@@ -259,17 +249,7 @@ export class AssistantDurableObject extends DurableObject {
 
           console.log(`[INFO][${stage}] Querying topic: id=${topic.id}, name=${topic.name}`);
 
-          const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: JSON.stringify(allMessages) }
-            ]
-          });
-
-          console.log(`[DEBUG][${stage}] AI response for topic=${topic.id}:`, JSON.stringify(aiResponse));
-
-          const response = aiResponse?.choices?.[0]?.message?.content;
-          if (!response) throw new Error(`[${stage}] AI returned empty response for topic=${topic.id}`);
+          const response = await this.#runAI(systemPrompt, JSON.stringify(allMessages));
 
           results.push({ topicId: topic.id, topicName: topic.name, response });
         } catch (err) {
@@ -328,17 +308,7 @@ export class AssistantDurableObject extends DurableObject {
 
           console.log(`[INFO][${stage}] Querying category: id=${category.id}, name=${category.name}, topics=${topicsWithSummaries.length}`);
 
-          const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: "Process the query." }
-            ]
-          });
-
-          console.log(`[DEBUG][${stage}] AI response for category=${category.id}:`, JSON.stringify(aiResponse));
-
-          const response = aiResponse?.choices?.[0]?.message?.content;
-          if (!response) throw new Error(`[${stage}] AI returned empty response for category=${category.id}`);
+          const response = await this.#runAI(systemPrompt, "Process the query.");
 
           results.push({ categoryId: category.id, categoryName: category.name, response });
         } catch (err) {
@@ -384,12 +354,7 @@ export class AssistantDurableObject extends DurableObject {
         return;
       }
 
-      const newMessages = conversations.flatMap(conv => {
-        try { return JSON.parse(conv.messages); } catch {
-          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conv.id}`);
-          return [];
-        }
-      });
+      const newMessages = this.#parseMessages(conversations);
 
       if (!newMessages.length) {
         console.log(`[INFO][${stage}] No new messages for topic=${topicId}`);
@@ -404,17 +369,7 @@ export class AssistantDurableObject extends DurableObject {
 
       console.log(`[INFO][${stage}] Updating topic summary: id=${topic.id}, name=${topic.name}, newMessages=${newMessages.length}`);
 
-      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-        messages: [
-          { role: "system", content: summaryPrompt },
-          { role: "user", content: JSON.stringify(newMessages) }
-        ]
-      });
-
-      console.log(`[DEBUG][${stage}] AI response for topic=${topic.id}:`, JSON.stringify(aiResponse));
-
-      const newSummary = aiResponse?.choices?.[0]?.message?.content;
-      if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for topic=${topic.id}`);
+      const newSummary = await this.#runAI(summaryPrompt, JSON.stringify(newMessages));
 
       this.#db.exec(
         `UPDATE topics SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
@@ -468,17 +423,7 @@ export class AssistantDurableObject extends DurableObject {
 
       console.log(`[INFO][${stage}] Updating category summary: id=${category.id}, name=${category.name}, updatedTopics=${updatedTopics.length}`);
 
-      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-        messages: [
-          { role: "system", content: summaryPrompt },
-          { role: "user", content: "Generate the updated category summary." }
-        ]
-      });
-
-      console.log(`[DEBUG][${stage}] AI response for category=${category.id}:`, JSON.stringify(aiResponse));
-
-      const newSummary = aiResponse?.choices?.[0]?.message?.content;
-      if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for category=${category.id}`);
+      const newSummary = await this.#runAI(summaryPrompt, "Generate the updated category summary.");
 
       this.#db.exec(
         `UPDATE categories SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
@@ -542,20 +487,11 @@ export class AssistantDurableObject extends DurableObject {
 
       if (!conversations.length) throw new Error("No conversations found");
 
-      const allMessages = conversations.flatMap(conv => {
-        try { return JSON.parse(conv.messages); } catch { return []; }
-      });
+      const allMessages = this.#parseMessages(conversations);
       if (!allMessages.length) throw new Error("No messages found");
 
-      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-        messages: [
-          { role: "system", content: [this.env.AI_SYSTEM_INSTRUCTION, `Category: ${categoryName}, Topic: ${topicName}.`, prompt].join("\n") },
-          { role: "user", content: JSON.stringify(allMessages) }
-        ]
-      });
-
-      const response = aiResponse?.choices?.[0]?.message?.content;
-      if (!response) throw new Error("AI returned empty response");
+      const systemPrompt = [this.env.AI_SYSTEM_INSTRUCTION, `Category: ${categoryName}, Topic: ${topicName}.`, prompt].join("\n");
+      const response = await this.#runAI(systemPrompt, JSON.stringify(allMessages));
 
       return { response };
     } catch (err) {
@@ -585,15 +521,8 @@ export class AssistantDurableObject extends DurableObject {
 
       const topicSummariesText = topics.map(t => `- ${t.name}: ${t.summary}`).join("\n\n");
 
-      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-        messages: [
-          { role: "system", content: [this.env.AI_SYSTEM_INSTRUCTION, `Category: ${categoryRow.name}.`, prompt, `Topic summaries:\n${topicSummariesText}`].join("\n") },
-          { role: "user", content: "Process the query." }
-        ]
-      });
-
-      const response = aiResponse?.choices?.[0]?.message?.content;
-      if (!response) throw new Error("AI returned empty response");
+      const systemPrompt = [this.env.AI_SYSTEM_INSTRUCTION, `Category: ${categoryRow.name}.`, prompt, `Topic summaries:\n${topicSummariesText}`].join("\n");
+      const response = await this.#runAI(systemPrompt, "Process the query.");
 
       return { response };
     } catch (err) {
