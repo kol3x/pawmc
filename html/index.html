@@ -112,9 +112,36 @@
       .cat-item { border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin: 10px 0; }
       .cat-name { font-weight: bold; font-size: 1.1em; }
       .cat-summary { margin: 5px 0; color: var(--blockquote); }
+      .cat-summary p { margin: 0.5em 0; }
+      .cat-summary code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
+      .cat-summary pre { background: var(--code-bg); padding: 10px; border-radius: 5px; overflow-x: auto; }
+      .cat-summary pre code { background: none; padding: 0; }
+      .cat-summary ul, .cat-summary ol { padding-left: 20px; }
+      .cat-summary h1, .cat-summary h2, .cat-summary h3 { margin-top: 0.5em; }
+      .cat-summary blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
       .topic-item { margin: 5px 0 5px 15px; }
       .topic-name { font-weight: bold; }
       .topic-summary { color: var(--blockquote); font-size: 0.9em; }
+      .topic-summary p { margin: 0.5em 0; }
+      .topic-summary code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
+      .topic-summary pre { background: var(--code-bg); padding: 10px; border-radius: 5px; overflow-x: auto; }
+      .topic-summary pre code { background: none; padding: 0; }
+      .topic-summary ul, .topic-summary ol { padding-left: 20px; }
+      .topic-summary h1, .topic-summary h2, .topic-summary h3 { margin-top: 0.5em; }
+      .topic-summary blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
+
+      /* Collapsible Explore Tab */
+      .cat-header, .topic-header { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--input-bg); border-radius: 6px; user-select: none; margin-bottom: 4px; }
+      .cat-header:hover, .topic-header:hover { background: var(--code-bg); }
+      .cat-header .icon, .topic-header .icon { font-weight: bold; font-family: monospace; }
+      .cat-header .cat-title, .topic-header .topic-title { flex: 1; font-weight: bold; }
+      .cat-header .chevron, .topic-header .chevron { font-size: 0.8em; transition: transform 0.2s; color: var(--blockquote); }
+      .cat-header.collapsed .chevron, .topic-header.collapsed .chevron { transform: rotate(-90deg); }
+      .cat-body, .topic-body { padding: 10px 10px 10px 20px; border-left: 2px solid var(--border); margin-left: 12px; }
+      .cat-body.collapsed, .topic-body.collapsed { display: none; }
+      .topic-header { font-size: 0.9em; padding: 8px; background: transparent; }
+      .topic-header:hover { background: var(--code-bg); }
+      .cat-item { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden; }
     </style>
   </head>
   <body>
@@ -293,20 +320,34 @@
         document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Category: ${category}</b><br>${parseMarkdown(res.response || res.error)}</div>`
       }
 
+      function escapeHtml(text) {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+      }
+
       function parseMarkdown(text) {
+        text = escapeHtml(text)
+        text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
         text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>')
         text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>')
         text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>')
         text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
         text = text.replace(/`(.+?)`/g, '<code>$1</code>')
-        text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
         text = text.replace(/^\* (.+)$/gm, '<li>$1</li>')
-        text = text.replace(/<\/li>\n<li>/g, '</li>\n<li>')
-        text = text.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+        text = text.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>')
         text = text.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
         text = text.replace(/\n/g, '<br>')
         return text
+      }
+
+      function toggleCategory(el) {
+        el.classList.toggle('collapsed');
+        el.nextElementSibling.classList.toggle('collapsed');
+      }
+
+      function toggleTopic(el) {
+        el.classList.toggle('collapsed');
+        el.nextElementSibling.classList.toggle('collapsed');
       }
 
       async function send() {
@@ -324,13 +365,26 @@
         container.innerHTML = categoriesData
           .map(c => `
             <div class="cat-item">
-              <div class="cat-name">${c.name}</div>
-              <div class="cat-summary">${c.summary ? parseMarkdown(c.summary) : '<em>no summary</em>'}</div>
-              ${c.topics.map(t => `
-                <div class="topic-item">
-                  <span class="topic-name">${t.name}</span>: ${t.summary ? parseMarkdown(t.summary) : '<em>no summary</em>'}
-                </div>
-              `).join('')}
+              <div class="cat-header collapsed" onclick="toggleCategory(this)">
+                <span class="icon">+</span>
+                <span class="cat-title">${escapeHtml(c.name)}</span>
+                <span class="chevron">v</span>
+              </div>
+              <div class="cat-body collapsed">
+                <div class="cat-summary">${c.summary ? parseMarkdown(c.summary) : '<em>no summary</em>'}</div>
+                ${c.topics.map(t => `
+                  <div class="topic-item">
+                    <div class="topic-header collapsed" onclick="toggleTopic(this)">
+                      <span class="icon">-</span>
+                      <span class="topic-title">${escapeHtml(t.name)}</span>
+                      <span class="chevron">v</span>
+                    </div>
+                    <div class="topic-body collapsed">
+                      <div class="topic-summary">${t.summary ? parseMarkdown(t.summary) : '<em>no summary</em>'}</div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
             </div>
           `).join("")
       }
