@@ -36,6 +36,7 @@ import { DurableObject } from "cloudflare:workers";
  *   category_id INTEGER NOT NULL,
  *   name TEXT NOT NULL,
  *   summary TEXT NOT NULL DEFAULT '',
+ *   last_summary_at INTEGER DEFAULT (strftime('%s', 'now')),
  *   updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
  *   UNIQUE(category_id, name),
  *   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
@@ -75,6 +76,7 @@ export class AssistantDurableObject extends DurableObject {
         category_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         summary TEXT NOT NULL DEFAULT '',
+        last_summary_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
         UNIQUE(category_id, name),
         FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
@@ -88,6 +90,18 @@ export class AssistantDurableObject extends DurableObject {
         FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
       );
     `);
+
+    const topicColumns = this.#db.exec(`PRAGMA table_info(topics)`).toArray();
+    const hasLastSummaryAt = topicColumns.some(col => col.name === 'last_summary_at');
+    if (!hasLastSummaryAt) {
+      await this.#db.exec(`ALTER TABLE topics ADD COLUMN last_summary_at INTEGER DEFAULT (strftime('%s', 'now'))`);
+    }
+
+    const categoryColumns = this.#db.exec(`PRAGMA table_info(categories)`).toArray();
+    const hasUpdatedAt = categoryColumns.some(col => col.name === 'updated_at_timestamp');
+    if (!hasUpdatedAt) {
+      await this.#db.exec(`ALTER TABLE categories ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
+    }
   }
 
   /**
@@ -141,11 +155,12 @@ export class AssistantDurableObject extends DurableObject {
       messages.push({ role: "user", content: userMessage });
 
       const systemPrompt = [
-        `Your client values succinct and direct outputs without extra formatting, warnings, and politeness.You are a personal assistant helping with: ${category} / ${topic}.`, 
+        this.env.AI_SYSTEM_INSTRUCTION,
+        `You are a personal assistant helping with: ${category} / ${topic}.`,
         topicRow.summary ? `Context summary: ${topicRow.summary}` : null
       ].filter(Boolean).join("\n");
 
-      const aiResponse = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
+      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
         messages: [
           { role: "system", content: systemPrompt },
           ...messages
@@ -197,13 +212,14 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
   /**
-   * Processes all conversations for each topic and regenerates their summaries using AI.
-   * This function iterates through every topic, aggregates its conversation messages,
-   * and generates a concise summary focusing on key information, decisions, and facts.
-   * @returns {Promise<void>}
+   * Queries all topics with a custom prompt. Iterates through every topic,
+   * aggregates its conversation messages, and sends them with the custom prompt to AI.
+   * @param {string} prompt
+   * @returns {Promise<Array<{topicId: number, topicName: string, response: string}>>}
    */
-  async updateTopicSummaries() {
-    const stage = "updateTopicSummaries";
+  async queryTopic(prompt) {
+    const stage = "queryTopic";
+    const results = [];
     try {
       const topics = [...this.#db.exec(
         `SELECT t.id, t.name, t.summary, c.name as category_name
@@ -237,35 +253,33 @@ export class AssistantDurableObject extends DurableObject {
             continue;
           }
 
-          const summaryPrompt = [
-            topic.summary ? `Existing summary: ${topic.summary}` : null,
-            `Summarize the following conversation history for context retention. Be concise and focus on key information, decisions, and facts. Category: ${topic.category_name}, Topic: ${topic.name}.`
-          ].filter(Boolean).join("\n");
+          const systemPrompt = [
+            this.env.AI_SYSTEM_INSTRUCTION,
+            `Category: ${topic.category_name}, Topic: ${topic.name}.`,
+            prompt
+          ].join("\n");
 
-          console.log(`[INFO][${stage}] Generating summary for topic: id=${topic.id}, name=${topic.name}`);
+          console.log(`[INFO][${stage}] Querying topic: id=${topic.id}, name=${topic.name}`);
 
-          const aiResponse = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
+          const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
             messages: [
-              { role: "system", content: summaryPrompt },
+              { role: "system", content: systemPrompt },
               { role: "user", content: JSON.stringify(allMessages) }
             ]
           });
 
           console.log(`[DEBUG][${stage}] AI response for topic=${topic.id}:`, JSON.stringify(aiResponse));
 
-          const newSummary = aiResponse?.choices?.[0]?.message?.content;
-          if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for topic=${topic.id}`);
+          const response = aiResponse?.choices?.[0]?.message?.content;
+          if (!response) throw new Error(`[${stage}] AI returned empty response for topic=${topic.id}`);
 
-          this.#db.exec(
-            `UPDATE topics SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
-            newSummary, topic.id
-          );
-          console.log(`[INFO][${stage}] Summary updated: topic=${topic.id}, name=${topic.name}`);
+          results.push({ topicId: topic.id, topicName: topic.name, response });
         } catch (err) {
-          console.error(`[ERROR][${stage}] Failed to update summary for topic=${topic.id}: ${err.message}`);
+          console.error(`[ERROR][${stage}] Failed to query topic=${topic.id}: ${err.message}`);
         }
       }
-      console.log(`[INFO][${stage}] Topic summaries update complete: processed ${topics.length} topics`);
+      console.log(`[INFO][${stage}] Query complete: processed ${topics.length} topics`);
+      return results;
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -273,14 +287,14 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
-   * Regenerates summaries for all categories based on their topic summaries.
-   * For each category, this function collects all non-empty topic summaries and
-   * generates a consolidated category-level summary using AI. The category summary
-   * provides a high-level overview of all topics within that category.
-   * @returns {Promise<void>}
+   * Queries all categories with a custom prompt. Iterates through every category,
+   * collects topic summaries, and sends them with the custom prompt to AI.
+   * @param {string} prompt
+   * @returns {Promise<Array<{categoryId: number, categoryName: string, response: string}>>}
    */
-  async updateCategorySummaries() {
-    const stage = "updateCategorySummaries";
+  async queryCategory(prompt) {
+    const stage = "queryCategory";
+    const results = [];
     try {
       const categories = [...this.#db.exec(
         `SELECT c.id, c.name, c.summary
@@ -307,36 +321,34 @@ export class AssistantDurableObject extends DurableObject {
             .map(t => `- ${t.name}: ${t.summary}`)
             .join("\n\n");
 
-          const summaryPrompt = [
-            category.summary ? `Existing category summary: ${category.summary}` : null,
-            `Generate a consolidated summary for the "${category.name}" category based on the following topic summaries. The category summary should provide a high-level overview of all topics within this category, highlighting common themes and key areas of focus.`,
+          const systemPrompt = [
+            this.env.AI_SYSTEM_INSTRUCTION,
+            `Category: ${category.name}.`,
+            prompt,
             `Topic summaries:\n${topicSummariesText}`
-          ].filter(Boolean).join("\n\n");
+          ].join("\n\n");
 
-          console.log(`[INFO][${stage}] Generating summary for category: id=${category.id}, name=${category.name}, topics=${topicsWithSummaries.length}`);
+          console.log(`[INFO][${stage}] Querying category: id=${category.id}, name=${category.name}, topics=${topicsWithSummaries.length}`);
 
-          const aiResponse = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
+          const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
             messages: [
-              { role: "system", content: summaryPrompt },
-              { role: "user", content: "Generate the category summary." }
+              { role: "system", content: systemPrompt },
+              { role: "user", content: "Process the query." }
             ]
           });
 
           console.log(`[DEBUG][${stage}] AI response for category=${category.id}:`, JSON.stringify(aiResponse));
 
-          const newSummary = aiResponse?.choices?.[0]?.message?.content;
-          if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for category=${category.id}`);
+          const response = aiResponse?.choices?.[0]?.message?.content;
+          if (!response) throw new Error(`[${stage}] AI returned empty response for category=${category.id}`);
 
-          this.#db.exec(
-            `UPDATE categories SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
-            newSummary, category.id
-          );
-          console.log(`[INFO][${stage}] Summary updated: category=${category.id}, name=${category.name}, topics=${topicsWithSummaries.length}`);
+          results.push({ categoryId: category.id, categoryName: category.name, response });
         } catch (err) {
-          console.error(`[ERROR][${stage}] Failed to update summary for category=${category.id}: ${err.message}`);
+          console.error(`[ERROR][${stage}] Failed to query category=${category.id}: ${err.message}`);
         }
       }
-      console.log(`[INFO][${stage}] Category summaries update complete: processed ${categories.length} categories`);
+      console.log(`[INFO][${stage}] Query complete: processed ${categories.length} categories`);
+      return results;
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -344,18 +356,248 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
-   * Updates summaries for both topics and categories in sequence.
-   * This is the main entry point for daily summary generation. It first updates
-   * all topic summaries based on their conversations, then updates all category
-   * summaries based on the newly generated topic summaries.
+   * Incrementally updates a topic's summary by processing only new conversations since the last summary update.
+   * @param {number} topicId
+   * @returns {Promise<void>}
+   */
+  async updateTopicSummaryIncremental(topicId) {
+    const stage = "updateTopicSummaryIncremental";
+    try {
+      const topic = this.#db.exec(
+        `SELECT t.id, t.name, t.summary, t.last_summary_at, c.name as category_name
+         FROM topics t
+         JOIN categories c ON c.id = t.category_id
+         WHERE t.id = ?`,
+        topicId
+      ).one();
+
+      if (!topic) throw new Error(`[${stage}] Topic not found: ${topicId}`);
+
+      const lastSummaryAt = topic.last_summary_at || 0;
+      const conversations = [...this.#db.exec(
+        `SELECT id, messages FROM conversations
+         WHERE topic_id = ? AND created_at_timestamp > ?
+         ORDER BY created_at_timestamp ASC`,
+        topicId, lastSummaryAt
+      ).toArray()];
+
+      if (!conversations.length) {
+        console.log(`[INFO][${stage}] No new conversations for topic=${topicId}`);
+        return;
+      }
+
+      const newMessages = conversations.flatMap(conv => {
+        try { return JSON.parse(conv.messages); } catch {
+          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conv.id}`);
+          return [];
+        }
+      });
+
+      if (!newMessages.length) {
+        console.log(`[INFO][${stage}] No new messages for topic=${topicId}`);
+        return;
+      }
+
+      const summaryPrompt = [
+        this.env.AI_SYSTEM_INSTRUCTION,
+        topic.summary ? `Existing summary: ${topic.summary}` : null,
+        `Update the summary by incorporating the following NEW messages. Keep it concise and focus on key information, decisions, and facts. Category: ${topic.category_name}, Topic: ${topic.name}.`
+      ].filter(Boolean).join("\n");
+
+      console.log(`[INFO][${stage}] Updating topic summary: id=${topic.id}, name=${topic.name}, newMessages=${newMessages.length}`);
+
+      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
+        messages: [
+          { role: "system", content: summaryPrompt },
+          { role: "user", content: JSON.stringify(newMessages) }
+        ]
+      });
+
+      console.log(`[DEBUG][${stage}] AI response for topic=${topic.id}:`, JSON.stringify(aiResponse));
+
+      const newSummary = aiResponse?.choices?.[0]?.message?.content;
+      if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for topic=${topic.id}`);
+
+      this.#db.exec(
+        `UPDATE topics SET summary = ?, last_summary_at = strftime('%s', 'now'), updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
+        newSummary, topic.id
+      );
+      console.log(`[INFO][${stage}] Topic summary updated: topic=${topic.id}, name=${topic.name}`);
+    } catch (err) {
+      console.error(`[ERROR][${stage}] Failed to update topic summary: ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Incrementally updates a category's summary by processing only topics that have been updated since the last category summary update.
+   * @param {number} categoryId
+   * @returns {Promise<void>}
+   */
+  async updateCategorySummaryIncremental(categoryId) {
+    const stage = "updateCategorySummaryIncremental";
+    try {
+      const category = this.#db.exec(
+        `SELECT id, name, summary, updated_at_timestamp FROM categories WHERE id = ?`,
+        categoryId
+      ).one();
+
+      if (!category) throw new Error(`[${stage}] Category not found: ${categoryId}`);
+
+      const lastCatSummaryAt = category.updated_at_timestamp || 0;
+      const updatedTopics = [...this.#db.exec(
+        `SELECT id, name, summary
+         FROM topics
+         WHERE category_id = ? AND summary != '' AND updated_at_timestamp > ?`,
+        categoryId, lastCatSummaryAt
+      ).toArray()];
+
+      if (!updatedTopics.length) {
+        console.log(`[INFO][${stage}] No updated topics for category=${categoryId}`);
+        return;
+      }
+
+      const topicSummariesText = updatedTopics
+        .map(t => `- ${t.name}: ${t.summary}`)
+        .join("\n\n");
+
+      const summaryPrompt = [
+        this.env.AI_SYSTEM_INSTRUCTION,
+        category.summary ? `Existing category summary: ${category.summary}` : null,
+        `Update the category summary by incorporating the following UPDATED topic summaries. The category summary should provide a high-level overview, highlighting common themes and key areas of focus.`,
+        `Updated topic summaries:\n${topicSummariesText}`
+      ].filter(Boolean).join("\n\n");
+
+      console.log(`[INFO][${stage}] Updating category summary: id=${category.id}, name=${category.name}, updatedTopics=${updatedTopics.length}`);
+
+      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
+        messages: [
+          { role: "system", content: summaryPrompt },
+          { role: "user", content: "Generate the updated category summary." }
+        ]
+      });
+
+      console.log(`[DEBUG][${stage}] AI response for category=${category.id}:`, JSON.stringify(aiResponse));
+
+      const newSummary = aiResponse?.choices?.[0]?.message?.content;
+      if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for category=${category.id}`);
+
+      this.#db.exec(
+        `UPDATE categories SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
+        newSummary, category.id
+      );
+      console.log(`[INFO][${stage}] Category summary updated: category=${category.id}, name=${category.name}`);
+    } catch (err) {
+      console.error(`[ERROR][${stage}] Failed to update category summary: ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Updates all summaries incrementally. Iterates through all topics and categories,
+   * processing only new conversations since last summary update.
    * @returns {Promise<void>}
    */
   async updateAllSummaries() {
     const stage = "updateAllSummaries";
     try {
-      await this.updateTopicSummaries();
-      await this.updateCategorySummaries();
+      const topics = [...this.#db.exec(`SELECT id FROM topics`).toArray()];
+      for (const topic of topics) {
+        await this.updateTopicSummaryIncremental(topic.id);
+      }
+
+      const categories = [...this.#db.exec(`SELECT id FROM categories`).toArray()];
+      for (const category of categories) {
+        await this.updateCategorySummaryIncremental(category.id);
+      }
+
       console.log(`[INFO][${stage}] All summaries updated successfully`);
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Queries a specific topic by name with a custom prompt.
+   * @param {string} categoryName
+   * @param {string} topicName
+   * @param {string} prompt
+   * @returns {Promise<{response: string}>}
+   */
+  async queryTopicByName(categoryName, topicName, prompt) {
+    const stage = "queryTopicByName";
+    try {
+      const categoryRow = this.#db.exec(`SELECT id FROM categories WHERE name = ?`, categoryName.trim()).one();
+      if (!categoryRow) throw new Error(`Category not found: ${categoryName}`);
+
+      const topicRow = this.#db.exec(
+        `SELECT id, name FROM topics WHERE category_id = ? AND name = ?`,
+        categoryRow.id, topicName.trim()
+      ).one();
+      if (!topicRow) throw new Error(`Topic not found: ${topicName}`);
+
+      const conversations = [...this.#db.exec(
+        `SELECT id, messages FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp ASC`,
+        topicRow.id
+      ).toArray()];
+
+      if (!conversations.length) throw new Error("No conversations found");
+
+      const allMessages = conversations.flatMap(conv => {
+        try { return JSON.parse(conv.messages); } catch { return []; }
+      });
+      if (!allMessages.length) throw new Error("No messages found");
+
+      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
+        messages: [
+          { role: "system", content: [this.env.AI_SYSTEM_INSTRUCTION, `Category: ${categoryName}, Topic: ${topicName}.`, prompt].join("\n") },
+          { role: "user", content: JSON.stringify(allMessages) }
+        ]
+      });
+
+      const response = aiResponse?.choices?.[0]?.message?.content;
+      if (!response) throw new Error("AI returned empty response");
+
+      return { response };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Queries a specific category by name with a custom prompt.
+   * @param {string} categoryName
+   * @param {string} prompt
+   * @returns {Promise<{response: string}>}
+   */
+  async queryCategoryByName(categoryName, prompt) {
+    const stage = "queryCategoryByName";
+    try {
+      const categoryRow = this.#db.exec(`SELECT id, name FROM categories WHERE name = ?`, categoryName.trim()).one();
+      if (!categoryRow) throw new Error(`Category not found: ${categoryName}`);
+
+      const topics = [...this.#db.exec(
+        `SELECT id, name, summary FROM topics WHERE category_id = ? AND summary != ''`,
+        categoryRow.id
+      ).toArray()];
+
+      if (!topics.length) throw new Error("No topics with summaries found");
+
+      const topicSummariesText = topics.map(t => `- ${t.name}: ${t.summary}`).join("\n\n");
+
+      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
+        messages: [
+          { role: "system", content: [this.env.AI_SYSTEM_INSTRUCTION, `Category: ${categoryRow.name}.`, prompt, `Topic summaries:\n${topicSummariesText}`].join("\n") },
+          { role: "user", content: "Process the query." }
+        ]
+      });
+
+      const response = aiResponse?.choices?.[0]?.message?.content;
+      if (!response) throw new Error("AI returned empty response");
+
+      return { response };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -428,6 +670,34 @@ export default {
         await stub.updateAllSummaries();
         console.log(`[INFO][${stage}] Manual summary update completed`);
         return Response.json({ success: true });
+      }
+
+      if (request.method === "POST" && url.pathname === "/query-topic") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const { category, topic, prompt } = body ?? {};
+        if (!category?.trim() || !topic?.trim() || !prompt?.trim())
+          return Response.json({ error: "category, topic, and prompt are required" }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Query topic: category=${category}, topic=${topic}`);
+        const result = await stub.queryTopicByName(category, topic, prompt);
+        return Response.json({ category, topic, prompt, response: result.response });
+      }
+
+      if (request.method === "POST" && url.pathname === "/query-category") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const { category, prompt } = body ?? {};
+        if (!category?.trim() || !prompt?.trim())
+          return Response.json({ error: "category and prompt are required" }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Query category: category=${category}`);
+        const result = await stub.queryCategoryByName(category, prompt);
+        return Response.json({ category, prompt, response: result.response });
       }
 
       return Response.json({ error: "Not found" }, { status: 404 });

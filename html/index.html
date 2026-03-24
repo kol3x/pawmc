@@ -102,6 +102,19 @@
       }
       .conv-item:hover { background: var(--code-bg); }
       .conv-item.active { background: var(--user); color: #fff; }
+      .tabs { display: flex; gap: 10px; margin-bottom: 10px; }
+      .tab { padding: 10px 20px; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); }
+      .tab.active { background: var(--user); color: #fff; }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+      fieldset { border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin: 10px 0; }
+      legend { font-weight: bold; padding: 0 5px; }
+      .cat-item { border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin: 10px 0; }
+      .cat-name { font-weight: bold; font-size: 1.1em; }
+      .cat-summary { margin: 5px 0; color: var(--blockquote); }
+      .topic-item { margin: 5px 0 5px 15px; }
+      .topic-name { font-weight: bold; }
+      .topic-summary { color: var(--blockquote); font-size: 0.9em; }
     </style>
   </head>
   <body>
@@ -109,17 +122,50 @@
       <h3>Conversations</h3>
       <button onclick="newConversation()">Start conversation</button>
       <button onclick="updateSummaries()">Update Summaries</button>
-      <button onclick="loadCategories()">Load Categories</button>
       <div id="conversations"></div>
     </div>
     <div id="main">
     <h1>Personal Assistant</h1>
     <input id="apiKey" type="password" placeholder="API Key" />
-    <input id="category" placeholder="Category" />
-    <input id="topic" placeholder="Topic" />
-    <textarea id="message" placeholder="Message"></textarea>
-    <button onclick="send()">Send</button>
-    <div id="messages"></div>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('chat')">Chat</button>
+      <button class="tab" onclick="switchTab('query')">Query</button>
+      <button class="tab" onclick="switchTab('explore')">Explore</button>
+    </div>
+    <div id="tab-chat" class="tab-content active">
+      <input id="category" list="categoryList" placeholder="Category (or type new)" />
+      <datalist id="categoryList"></datalist>
+      <input id="topic" list="topicList" placeholder="Topic (or type new)" />
+      <datalist id="topicList"></datalist>
+      <textarea id="message" placeholder="Message"></textarea>
+      <button onclick="send()">Send</button>
+      <div id="messages"></div>
+    </div>
+    <div id="tab-query" class="tab-content">
+      <fieldset>
+        <legend>Query Topic</legend>
+        <select id="qTopicCategory">
+          <option value="">Select Category</option>
+        </select>
+        <select id="qTopicName">
+          <option value="">Select Topic</option>
+        </select>
+        <textarea id="qTopicPrompt" placeholder="Prompt"></textarea>
+        <button onclick="queryTopic()">Query Topic</button>
+      </fieldset>
+      <fieldset>
+        <legend>Query Category</legend>
+        <select id="qCategoryName">
+          <option value="">Select Category</option>
+        </select>
+        <textarea id="qCategoryPrompt" placeholder="Prompt"></textarea>
+        <button onclick="queryCategory()">Query Category</button>
+      </fieldset>
+      <div id="queryResults"></div>
+    </div>
+    <div id="tab-explore" class="tab-content">
+      <div id="exploreList"></div>
+    </div>
     </div>
     <script>
       const base = location.origin
@@ -132,7 +178,10 @@
       const savedKey = localStorage.getItem("apiKey")
       if (savedKey) apiKey.value = savedKey
 
-      apiKey.addEventListener("change", () => localStorage.setItem("apiKey", apiKey.value))
+      apiKey.addEventListener("change", () => {
+        localStorage.setItem("apiKey", apiKey.value)
+        loadCategories()
+      })
 
       let conversations = JSON.parse(localStorage.getItem("conversations") || "[]")
       let currentConvId = null
@@ -207,6 +256,7 @@
 
       if (conversations.length === 0) newConversation()
       else loadConversation(conversations[0].id)
+      loadCategories()
 
       async function req(method, path, body) {
         const r = await fetch(base + path, {
@@ -215,6 +265,32 @@
           body: body ? JSON.stringify(body) : undefined,
         })
         return r.json()
+      }
+
+      function switchTab(tab) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'))
+        document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active')
+        document.getElementById(`tab-${tab}`).classList.add('active')
+      }
+
+      async function queryTopic() {
+        const category = document.getElementById('qTopicCategory').value
+        const topic = document.getElementById('qTopicName').value
+        const prompt = document.getElementById('qTopicPrompt').value
+        if (!category || !topic || !prompt) return alert('Fill all fields')
+        document.getElementById('queryResults').innerHTML = '<div class="msg">Loading...</div>'
+        const res = await req('POST', '/query-topic', { category, topic, prompt })
+        document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Topic: ${topic}</b><br>${parseMarkdown(res.response || res.error)}</div>`
+      }
+
+      async function queryCategory() {
+        const category = document.getElementById('qCategoryName').value
+        const prompt = document.getElementById('qCategoryPrompt').value
+        if (!category || !prompt) return alert('Fill all fields')
+        document.getElementById('queryResults').innerHTML = '<div class="msg">Loading...</div>'
+        const res = await req('POST', '/query-category', { category, prompt })
+        document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Category: ${category}</b><br>${parseMarkdown(res.response || res.error)}</div>`
       }
 
       function parseMarkdown(text) {
@@ -241,26 +317,62 @@
         message.value = ""
       }
 
-      async function loadCategories() {
-        const res = await req("GET", "/categories")
-        msgs.innerHTML = res
-          .map(
-            (c) =>
-              `<div><b>${c.name}</b> (${c.summary || "no summary"})<br>` +
-              c.topics.map((t) => `* ${t.name}: ${t.summary || "no summary"}`).join("<br>") +
-              "</div>",
-          )
-          .join("<hr>")
+      let categoriesData = []
+
+      function renderExplore() {
+        const container = document.getElementById("exploreList")
+        container.innerHTML = categoriesData
+          .map(c => `
+            <div class="cat-item">
+              <div class="cat-name">${c.name}</div>
+              <div class="cat-summary">${c.summary ? parseMarkdown(c.summary) : '<em>no summary</em>'}</div>
+              ${c.topics.map(t => `
+                <div class="topic-item">
+                  <span class="topic-name">${t.name}</span>: ${t.summary ? parseMarkdown(t.summary) : '<em>no summary</em>'}
+                </div>
+              `).join('')}
+            </div>
+          `).join("")
       }
 
+      async function loadCategories() {
+        const res = await req("GET", "/categories")
+        categoriesData = res
+        
+        const catList = document.getElementById("categoryList")
+        const topicList = document.getElementById("topicList")
+        catList.innerHTML = res.map(c => `<option value="${c.name}">`).join("")
+        
+        const qTopicCat = document.getElementById("qTopicCategory")
+        const qTopicName = document.getElementById("qTopicName")
+        const qCatName = document.getElementById("qCategoryName")
+        qTopicCat.innerHTML = '<option value="">Select Category</option>' + res.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
+        qCatName.innerHTML = '<option value="">Select Category</option>' + res.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
+        qTopicName.innerHTML = '<option value="">Select Topic</option>'
+        
+        renderExplore()
+      }
+
+      document.getElementById("qTopicCategory")?.addEventListener("change", function() {
+        const cat = categoriesData.find(c => c.name === this.value)
+        const qTopicName = document.getElementById("qTopicName")
+        qTopicName.innerHTML = '<option value="">Select Topic</option>' + (cat ? cat.topics.map(t => `<option value="${t.name}">${t.name}</option>`).join("") : "")
+      })
+
+      category.addEventListener("input", function() {
+        const cat = categoriesData.find(c => c.name === this.value)
+        const topicList = document.getElementById("topicList")
+        topicList.innerHTML = cat ? cat.topics.map(t => `<option value="${t.name}">`).join("") : categoriesData.flatMap(c => c.topics.map(t => `<option value="${t.name}">`)).join("")
+      })
+
       async function updateSummaries() {
-        msgs.innerHTML = "Updating summaries..."
+        switchTab('explore')
+        document.getElementById('exploreList').innerHTML = 'Updating summaries...'
         const res = await req("POST", "/update-summaries")
         if (res.success) {
-          msgs.innerHTML = "Summaries updated!"
           loadCategories()
         } else {
-          msgs.innerHTML = `Error: ${res.error}`
+          document.getElementById('exploreList').innerHTML = `Error: ${res.error}`
         }
       }
     </script>

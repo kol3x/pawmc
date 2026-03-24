@@ -15,6 +15,9 @@
 		{
 			"new_sqlite_classes": ["AssistantDurableObject"],
 			"tag": "v1"
+		},
+		{
+			"tag": "v2"
 		}
 	],
 	"ai": {
@@ -22,6 +25,10 @@
 	},
 	"triggers": {
 		"crons": ["0 0 * * *"]
+	},
+	"vars": {
+		"AI_MODEL": "@cf/moonshotai/kimi-k2.5",
+		"AI_SYSTEM_INSTRUCTION": "Your client values succinct and direct outputs without extra formatting, warnings, and politeness."
 	},
 	"observability": {
 		"enabled": true
