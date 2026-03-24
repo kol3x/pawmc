@@ -36,7 +36,6 @@ import { DurableObject } from "cloudflare:workers";
  *   category_id INTEGER NOT NULL,
  *   name TEXT NOT NULL,
  *   summary TEXT NOT NULL DEFAULT '',
- *   last_summary_at INTEGER DEFAULT (strftime('%s', 'now')),
  *   updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
  *   UNIQUE(category_id, name),
  *   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
@@ -76,7 +75,6 @@ export class AssistantDurableObject extends DurableObject {
         category_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         summary TEXT NOT NULL DEFAULT '',
-        last_summary_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
         UNIQUE(category_id, name),
         FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
@@ -91,16 +89,16 @@ export class AssistantDurableObject extends DurableObject {
       );
     `);
 
-    const topicColumns = this.#db.exec(`PRAGMA table_info(topics)`).toArray();
-    const hasLastSummaryAt = topicColumns.some(col => col.name === 'last_summary_at');
-    if (!hasLastSummaryAt) {
-      await this.#db.exec(`ALTER TABLE topics ADD COLUMN last_summary_at INTEGER DEFAULT (strftime('%s', 'now'))`);
+    const categoryColumns = this.#db.exec(`PRAGMA table_info(categories)`).toArray();
+    const hasUpdatedAtTimestamp = categoryColumns.some(col => col.name === 'updated_at_timestamp');
+    if (!hasUpdatedAtTimestamp) {
+      await this.#db.exec(`ALTER TABLE categories ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
     }
 
-    const categoryColumns = this.#db.exec(`PRAGMA table_info(categories)`).toArray();
-    const hasUpdatedAt = categoryColumns.some(col => col.name === 'updated_at_timestamp');
-    if (!hasUpdatedAt) {
-      await this.#db.exec(`ALTER TABLE categories ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
+    const topicColumns = this.#db.exec(`PRAGMA table_info(topics)`).toArray();
+    const hasUpdatedAtTimestampTopics = topicColumns.some(col => col.name === 'updated_at_timestamp');
+    if (!hasUpdatedAtTimestampTopics) {
+      await this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
     }
   }
 
@@ -364,7 +362,7 @@ export class AssistantDurableObject extends DurableObject {
     const stage = "updateTopicSummaryIncremental";
     try {
       const topic = this.#db.exec(
-        `SELECT t.id, t.name, t.summary, t.last_summary_at, c.name as category_name
+        `SELECT t.id, t.name, t.summary, t.updated_at_timestamp, c.name as category_name
          FROM topics t
          JOIN categories c ON c.id = t.category_id
          WHERE t.id = ?`,
@@ -373,7 +371,7 @@ export class AssistantDurableObject extends DurableObject {
 
       if (!topic) throw new Error(`[${stage}] Topic not found: ${topicId}`);
 
-      const lastSummaryAt = topic.last_summary_at || 0;
+      const lastSummaryAt = topic.updated_at_timestamp || 0;
       const conversations = [...this.#db.exec(
         `SELECT id, messages FROM conversations
          WHERE topic_id = ? AND created_at_timestamp > ?
@@ -419,7 +417,7 @@ export class AssistantDurableObject extends DurableObject {
       if (!newSummary) throw new Error(`[${stage}] AI returned empty summary for topic=${topic.id}`);
 
       this.#db.exec(
-        `UPDATE topics SET summary = ?, last_summary_at = strftime('%s', 'now'), updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
+        `UPDATE topics SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
         newSummary, topic.id
       );
       console.log(`[INFO][${stage}] Topic summary updated: topic=${topic.id}, name=${topic.name}`);
