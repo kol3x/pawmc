@@ -344,7 +344,7 @@ export class AssistantDurableObject extends DurableObject {
       const lastSummaryAt = topic.updated_at_timestamp || 0;
       const conversations = [...this.#db.exec(
         `SELECT id, messages FROM conversations
-         WHERE topic_id = ? AND created_at_timestamp > ?
+         WHERE topic_id = ? AND created_at_timestamp >= ?
          ORDER BY created_at_timestamp ASC`,
         topicId, lastSummaryAt
       ).toArray()];
@@ -401,7 +401,7 @@ export class AssistantDurableObject extends DurableObject {
       const updatedTopics = [...this.#db.exec(
         `SELECT id, name, summary
          FROM topics
-         WHERE category_id = ? AND summary != '' AND updated_at_timestamp > ?`,
+         WHERE category_id = ? AND summary != '' AND updated_at_timestamp >= ?`,
         categoryId, lastCatSummaryAt
       ).toArray()];
 
