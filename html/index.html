@@ -346,10 +346,17 @@
         localStorage.setItem("kanbanPrompt", kanbanPrompt.value)
       })
 
+      /**
+       * @typedef {{id: number, category: string, topic: string, created_at: number, last_message: string}} Conversation
+       * @typedef {{name: string}} ContextSource
+       * @typedef {{name: string, topics: Array<{id: number, name: string, summary: string}>}} CategoryData
+       */
+
       let conversations = []
       let currentConvId = null
       let currentMessages = []
 
+      /** Renders the sidebar conversation list, filtered by the search input. */
       function renderConversations() {
         const container = document.getElementById("conversations")
         const search = (document.getElementById("sidebarSearch")?.value || "").toLowerCase()
@@ -378,6 +385,11 @@
         }
       }
 
+      /**
+       * Converts a unix timestamp to a relative time string (e.g. "5m ago").
+       * @param {number} timestamp - Unix timestamp in seconds
+       * @returns {string}
+       */
       function relativeTime(timestamp) {
         const now = Math.floor(Date.now() / 1000)
         const diff = now - timestamp
@@ -389,6 +401,7 @@
         return new Date(timestamp * 1000).toLocaleDateString()
       }
 
+      /** Clears the current conversation and resets the UI to start a new one. */
       function newConversation() {
         currentConvId = null
         currentMessages = []
@@ -399,6 +412,10 @@
         renderConversations()
       }
 
+      /**
+       * Loads a conversation's messages from the server and displays them.
+       * @param {number} id - Conversation ID
+       */
       async function loadConversation(id) {
         const conv = conversations.find((c) => c.id === id)
         if (!conv) return
@@ -419,6 +436,11 @@
         renderConversations()
       }
 
+      /**
+       * Appends a message to the local messages display and the current conversation buffer.
+       * @param {"user"|"assistant"} role
+       * @param {string} text
+       */
       function addMsg(role, text) {
         const content = role === 'assistant' ? parseMarkdown(text) : text
         msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
@@ -426,6 +448,7 @@
         currentMessages.push({ role, text })
       }
 
+      /** Fetches the conversation list from the server and re-renders the sidebar. */
       async function refreshConversations() {
         const res = await req("GET", "/conversations")
         if (Array.isArray(res)) {
@@ -434,6 +457,10 @@
         }
       }
 
+      /**
+       * Deletes a conversation after user confirmation.
+       * @param {number} id - Conversation ID
+       */
       async function deleteConversation(id) {
         if (!confirm("Delete this conversation?")) return
         await req("DELETE", `/conversation?id=${id}`)
@@ -441,6 +468,7 @@
         await refreshConversations()
       }
 
+      /** Fetches available context providers (kanban-rundown, etc.) and renders checkboxes. */
       async function loadContextSources() {
         const res = await req("GET", "/context-sources")
         if (Array.isArray(res)) {
@@ -455,6 +483,13 @@
       loadContextSources()
       if (kanbanApiKey.value) loadKanbanColumns()
 
+      /**
+       * Sends an authenticated API request to the backend.
+       * @param {"GET"|"POST"|"DELETE"} method
+       * @param {string} path
+       * @param {object} [body] - JSON body (for POST)
+       * @returns {Promise<any>}
+       */
       async function req(method, path, body) {
         const headers = { Authorization: `Bearer ${apiKey.value}` }
         if (body) headers["Content-Type"] = "application/json"
@@ -466,6 +501,10 @@
         return r.json()
       }
 
+      /**
+       * Switches the active tab.
+       * @param {"chat"|"query"|"explore"|"kanban"} tab
+       */
       function switchTab(tab) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'))
@@ -473,6 +512,7 @@
         document.getElementById(`tab-${tab}`).classList.add('active')
       }
 
+      /** Queries a specific topic by name with a custom prompt. */
       async function queryTopic() {
         const category = document.getElementById('qTopicCategory').value
         const topic = document.getElementById('qTopicName').value
@@ -483,6 +523,7 @@
         document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Topic: ${topic}</b><br>${parseMarkdown(res.response || res.error)}</div>`
       }
 
+      /** Queries all topics in a category with a custom prompt. */
       async function queryCategory() {
         const category = document.getElementById('qCategoryName').value
         const prompt = document.getElementById('qCategoryPrompt').value
@@ -492,10 +533,20 @@
         document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Category: ${category}</b><br>${parseMarkdown(res.response || res.error)}</div>`
       }
 
+      /**
+       * Escapes HTML special characters in a string.
+       * @param {string} text
+       * @returns {string}
+       */
       function escapeHtml(text) {
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       }
 
+      /**
+       * Converts basic markdown text to safe HTML.
+       * @param {string} text
+       * @returns {string}
+       */
       function parseMarkdown(text) {
         text = escapeHtml(text)
         text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
@@ -522,10 +573,15 @@
         el.nextElementSibling.classList.toggle('collapsed');
       }
 
+      /**
+       * Returns the names of all checked context source checkboxes.
+       * @returns {string[]}
+       */
       function getSelectedContextSources() {
         return [...document.querySelectorAll("#contextSources input:checked")].map(cb => cb.value)
       }
 
+      /** Sends a chat message after validating inputs. */
       async function send() {
         if (!apiKey.value || !category.value || !topic.value || !message.value) return alert("Fill all fields")
         addMsg("user", message.value)
@@ -539,6 +595,7 @@
 
       let categoriesData = []
 
+      /** Renders the collapsible explore view from cached categories data. */
       function renderExplore() {
         const container = document.getElementById("exploreList")
         container.innerHTML = categoriesData
@@ -568,6 +625,7 @@
           `).join("")
       }
 
+      /** Fetches all categories and topics from the server and updates all related UI. */
       async function loadCategories() {
         const res = await req("GET", "/categories")
         categoriesData = res
@@ -598,6 +656,7 @@
         topicList.innerHTML = cat ? cat.topics.map(t => `<option value="${t.name}">`).join("") : categoriesData.flatMap(c => c.topics.map(t => `<option value="${t.name}">`)).join("")
       })
 
+      /** Triggers a manual summary update on the server, then reloads categories. */
       async function updateSummaries() {
         switchTab('explore')
         document.getElementById('exploreList').innerHTML = 'Updating summaries...'
@@ -611,6 +670,7 @@
 
       let kanbanColumns = []
 
+      /** Fetches kanban board columns and populates the column selector. */
       async function loadKanbanColumns() {
         const select = document.getElementById("kanbanColumn")
         select.innerHTML = '<option value="">Loading...</option>'
@@ -623,6 +683,7 @@
         }
       }
 
+      /** Creates a kanban task via the backend API. */
       async function createKanbanTask() {
         const column = document.getElementById("kanbanColumn").value
         const taskName = document.getElementById("kanbanTaskName").value
@@ -637,6 +698,7 @@
         }
       }
 
+      /** Generates an AI rundown of the kanban board with the current tasks. */
       async function generateKanbanRundown() {
         document.getElementById("kanbanResults").innerHTML = '<div class="msg">Generating rundown...</div>'
         const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value, customPrompt: kanbanPrompt.value || undefined })
