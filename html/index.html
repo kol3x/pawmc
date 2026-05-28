@@ -189,6 +189,8 @@
         cursor: pointer;
         font-size: 12px;
         flex-shrink: 0;
+        width: calc(100% - 24px);
+        white-space: nowrap;
       }
       .update-btn:hover { background: var(--code-bg); }
       #contextSources { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0; }
@@ -246,7 +248,7 @@
       </div>
       <input id="sidebarSearch" type="text" placeholder="Search conversations..." oninput="renderConversations()" />
       <div id="conversations"></div>
-      <button class="update-btn" onclick="updateSummaries()">⟳ Update Summaries</button>
+      <button class="update-btn" onclick="updateSummaries()">↻ Update Summaries</button>
     </div>
     <div id="main">
     <h1>Personal Assistant</h1>
@@ -364,7 +366,7 @@
               ${preview ? `<div class="conv-preview">${escapeHtml(preview)}${preview.length >= 80 ? "…" : ""}</div>` : ""}
               <div class="conv-meta">
                 <span class="conv-time">${time}</span>
-                <button class="conv-delete" onclick="event.stopPropagation();deleteConversation(${c.id})">✕</button>
+                <button class="conv-delete" onclick="event.stopPropagation();deleteConversation(${c.id})">×</button>
               </div>
             </div>`
           })
