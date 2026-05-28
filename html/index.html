@@ -167,7 +167,6 @@
       }
       .conv-time { font-size: 11px; opacity: 0.5; }
       .conv-delete {
-        font-size: 11px;
         opacity: 0;
         background: none;
         border: none;
@@ -175,6 +174,9 @@
         cursor: pointer;
         padding: 2px 4px;
         border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
       }
       .conv-item:hover .conv-delete { opacity: 0.5; }
       .conv-delete:hover { opacity: 1 !important; background: rgba(255,0,0,0.15); }
@@ -248,7 +250,7 @@
       </div>
       <input id="sidebarSearch" type="text" placeholder="Search conversations..." oninput="renderConversations()" />
       <div id="conversations"></div>
-      <button class="update-btn" onclick="updateSummaries()">↻ Update Summaries</button>
+      <button class="update-btn" onclick="updateSummaries()"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:middle;margin-right:4px"><path d="M2 7a5 5 0 0110 0M12 2v4.5H7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Update Summaries</button>
     </div>
     <div id="main">
     <h1>Personal Assistant</h1>
@@ -366,7 +368,7 @@
               ${preview ? `<div class="conv-preview">${escapeHtml(preview)}${preview.length >= 80 ? "…" : ""}</div>` : ""}
               <div class="conv-meta">
                 <span class="conv-time">${time}</span>
-                <button class="conv-delete" onclick="event.stopPropagation();deleteConversation(${c.id})">×</button>
+                <button class="conv-delete" onclick="event.stopPropagation();deleteConversation(${c.id})"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
               </div>
             </div>`
           })
