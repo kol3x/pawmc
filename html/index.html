@@ -191,6 +191,9 @@
         flex-shrink: 0;
       }
       .update-btn:hover { background: var(--code-bg); }
+      #contextSources { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0; }
+      #contextSources label { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; user-select: none; }
+      #contextSources input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
       .tabs { display: flex; gap: 10px; margin-bottom: 10px; }
       .tab { padding: 10px 20px; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); }
       .tab.active { background: var(--user); color: #fff; }
@@ -261,6 +264,7 @@
       <input id="topic" list="topicList" placeholder="Topic (or type new)" />
       <datalist id="topicList"></datalist>
       <textarea id="message" placeholder="Message"></textarea>
+      <div id="contextSources"></div>
       <button onclick="send()">Send</button>
       <div id="messages"></div>
     </div>
@@ -433,9 +437,18 @@
         await refreshConversations()
       }
 
+      async function loadContextSources() {
+        const res = await req("GET", "/context-sources")
+        if (Array.isArray(res)) {
+          const container = document.getElementById("contextSources")
+          container.innerHTML = res.map(s => `<label><input type="checkbox" value="${s.name}" /> ${s.name}</label>`).join("")
+        }
+      }
+
       newConversation()
       refreshConversations()
       loadCategories()
+      loadContextSources()
       if (kanbanApiKey.value) loadKanbanColumns()
 
       async function req(method, path, body) {
@@ -505,10 +518,15 @@
         el.nextElementSibling.classList.toggle('collapsed');
       }
 
+      function getSelectedContextSources() {
+        return [...document.querySelectorAll("#contextSources input:checked")].map(cb => cb.value)
+      }
+
       async function send() {
         if (!apiKey.value || !category.value || !topic.value || !message.value) return alert("Fill all fields")
         addMsg("user", message.value)
-        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value })
+        const contextSources = getSelectedContextSources()
+        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value, contextSources: contextSources.length ? contextSources : undefined })
         addMsg("assistant", res.response || res.error)
         message.value = ""
         if (res.conversationId) currentConvId = res.conversationId

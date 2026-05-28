@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { resolve as resolveContexts, list as listContextSources } from "./context.js";
 
 /**
  * Cloudflare Worker that uses SQLite-backed Durable Object. Works as a personal LLM assistant. It stores conversations and can uses summed up context when generating responses.
@@ -102,9 +103,10 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} category
    * @param {string} topic
    * @param {string} userMessage
+   * @param {string[]} [contextSources] - Optional names of context providers to inject (e.g. "kanban-rundown")
    * @returns {Promise<{response: string, conversationId: number}>}
    */
-  async chat(category, topic, userMessage) {
+  async chat(category, topic, userMessage, contextSources = []) {
     const stage = "chat";
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
@@ -151,6 +153,12 @@ export class AssistantDurableObject extends DurableObject {
       if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`);
       if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
       if (!contextParts.length) contextParts.push("You have no prior context about this topic. Ask the user about their situation if needed.");
+
+      if (contextSources.length) {
+        const injected = await resolveContexts(this.env, this, contextSources);
+        contextParts.push(...injected);
+      }
+
       const systemPrompt = [
         this.env.AI_SYSTEM_INSTRUCTION,
         `You are a personal assistant helping with: ${category} / ${topic}.`,
@@ -666,19 +674,11 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
-  /**
-   * Fetches all tasks from KanbanFlow, groups by column, and sends to AI
-   * for a brief rundown and advice on what to start working on.
-   * @param {string} kanbanApiKey
-   * @param {string} [customPrompt]
-   * @returns {Promise<{response: string}>}
-   */
-  async generateKanbanRundown(kanbanApiKey, customPrompt) {
-    const stage = "generateKanbanRundown";
-    try {
-      const tasksData = await this.#fetchKanban(kanbanApiKey, "/tasks");
-      const board = await this.#fetchKanban(kanbanApiKey, "/board");
-
+  #fetchAndFormatKanbanTasks(kanbanApiKey) {
+    return Promise.all([
+      this.#fetchKanban(kanbanApiKey, "/tasks"),
+      this.#fetchKanban(kanbanApiKey, "/board")
+    ]).then(([tasksData, board]) => {
       const columnMap = {};
       board.columns.forEach(c => { columnMap[c.uniqueId] = c.name; });
 
@@ -695,9 +695,40 @@ export class AssistantDurableObject extends DurableObject {
         });
       });
 
-      const taskReport = Object.entries(tasksByColumn)
+      return Object.entries(tasksByColumn)
         .map(([col, tasks]) => `### ${col}\n${tasks.join('\n')}`)
         .join('\n\n');
+    });
+  }
+
+  /**
+   * Returns raw KanbanFlow tasks grouped by column, formatted as markdown.
+   * @param {string} kanbanApiKey
+   * @returns {Promise<{tasks: string}>}
+   */
+  async getKanbanTasks(kanbanApiKey) {
+    const stage = "getKanbanTasks";
+    try {
+      const tasks = await this.#fetchAndFormatKanbanTasks(kanbanApiKey);
+      console.log(`[INFO][${stage}] Tasks formatted`);
+      return { tasks: tasks || "No tasks found." };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Fetches all tasks from KanbanFlow, groups by column, and sends to AI
+   * for a brief rundown and advice on what to start working on.
+   * @param {string} kanbanApiKey
+   * @param {string} [customPrompt]
+   * @returns {Promise<{response: string}>}
+   */
+  async generateKanbanRundown(kanbanApiKey, customPrompt) {
+    const stage = "generateKanbanRundown";
+    try {
+      const taskReport = await this.#fetchAndFormatKanbanTasks(kanbanApiKey);
 
       if (!taskReport.trim()) {
         return { response: "No tasks found on your KanbanFlow board." };
@@ -812,17 +843,21 @@ export default {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
 
+      if (request.method === "GET" && url.pathname === "/context-sources") {
+        return Response.json(listContextSources());
+      }
+
       if (request.method === "POST" && url.pathname === "/chat") {
         let body;
         try { body = await request.json(); } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
-        const { category, topic, message } = body ?? {};
+        const { category, topic, message, contextSources } = body ?? {};
         if (!category?.trim() || !topic?.trim() || !message?.trim())
           return Response.json({ error: "category, topic, and message are required" }, { status: 400 });
 
-        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}`);
-        const result = await stub.chat(category, topic, message);
+        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextSources=${JSON.stringify(contextSources)}`);
+        const result = await stub.chat(category, topic, message, contextSources);
         return Response.json(result);
       }
 
