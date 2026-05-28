@@ -111,7 +111,7 @@ export class AssistantDurableObject extends DurableObject {
         throw new Error(`[${stage}] Invalid input: category, topic, and userMessage are required`);
 
       const categoryRow = this.#db.exec(
-        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
+        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id, summary`,
         category.trim()
       ).one();
       console.log(`[INFO][${stage}] Category resolved: id=${categoryRow.id}, name=${category}`);
@@ -147,11 +147,15 @@ export class AssistantDurableObject extends DurableObject {
 
       messages.push({ role: "user", content: userMessage });
 
+      const contextParts = [];
+      if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`);
+      if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
+      if (!contextParts.length) contextParts.push("You have no prior context about this topic. Ask the user about their situation if needed.");
       const systemPrompt = [
         this.env.AI_SYSTEM_INSTRUCTION,
         `You are a personal assistant helping with: ${category} / ${topic}.`,
-        topicRow.summary ? `Context summary: ${topicRow.summary}` : null
-      ].filter(Boolean).join("\n");
+        ...contextParts
+      ].join("\n");
 
       const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
         messages: [
