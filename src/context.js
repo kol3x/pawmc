@@ -36,3 +36,17 @@ define("kanban-tasks", async (env, doInstance) => {
   const { tasks } = await doInstance.getKanbanTasks(key);
   return `## Current Kanban Tasks\n${tasks}`;
 });
+
+define("kanban-create", async (env, doInstance) => {
+  const key = env.KANBANFLOW_API_KEY;
+  if (!key) return "";
+  const { columns } = await doInstance.getKanbanBoard(key);
+  const columnNames = columns.map(c => c.name).join(", ");
+  return [
+    "## Available Actions",
+    "You can create KanbanFlow tasks when asked. Available columns: " + columnNames + ".",
+    'When the user asks to create a task, include this line in your response (one per task):',
+    "⧉ CREATE TASK: <task name> → <column name>",
+    "Do not ask for confirmation — create it immediately and report back."
+  ].join("\n");
+});

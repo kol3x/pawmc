@@ -180,7 +180,24 @@ export class AssistantDurableObject extends DurableObject {
       }
       if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
 
-      messages.push({ role: "assistant", content: assistantMessage });
+      const kanbanKey = this.env.KANBANFLOW_API_KEY;
+      const taskRegex = /⧉ CREATE TASK:\s*(.+?)\s*→\s*(.+?)(?:\n|$)/g;
+      let taskMatch;
+      let modifiedMessage = assistantMessage;
+      while ((taskMatch = taskRegex.exec(assistantMessage)) !== null) {
+        const taskName = taskMatch[1].trim();
+        const columnName = taskMatch[2].trim();
+        if (kanbanKey && taskName && columnName) {
+          try {
+            await this.createKanbanTask(kanbanKey, taskName, columnName);
+            modifiedMessage = modifiedMessage.replace(taskMatch[0], `✅ Task created: "${taskName}" in ${columnName}`);
+          } catch (err) {
+            modifiedMessage = modifiedMessage.replace(taskMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+          }
+        }
+      }
+
+      messages.push({ role: "assistant", content: modifiedMessage });
 
       this.#db.exec(
         `UPDATE conversations SET messages = ? WHERE id = ?`,
@@ -188,7 +205,7 @@ export class AssistantDurableObject extends DurableObject {
       );
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`);
 
-      return { response: assistantMessage, conversationId };
+      return { response: modifiedMessage, conversationId };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
