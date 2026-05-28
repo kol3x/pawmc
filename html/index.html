@@ -154,10 +154,12 @@
     <div id="main">
     <h1>Personal Assistant</h1>
     <input id="apiKey" type="password" placeholder="API Key" />
+    <input id="kanbanApiKey" type="password" placeholder="KanbanFlow API Key (optional, for manual override)" />
     <div class="tabs">
       <button class="tab active" onclick="switchTab('chat')">Chat</button>
       <button class="tab" onclick="switchTab('query')">Query</button>
       <button class="tab" onclick="switchTab('explore')">Explore</button>
+      <button class="tab" onclick="switchTab('kanban')">Kanban</button>
     </div>
     <div id="tab-chat" class="tab-content active">
       <input id="category" list="categoryList" placeholder="Category (or type new)" />
@@ -193,6 +195,20 @@
     <div id="tab-explore" class="tab-content">
       <div id="exploreList"></div>
     </div>
+    <div id="tab-kanban" class="tab-content">
+      <fieldset>
+        <legend>Add Task</legend>
+        <select id="kanbanColumn"><option value="">Select column</option></select>
+        <input id="kanbanTaskName" placeholder="Task name" />
+        <button onclick="createKanbanTask()">Add Task</button>
+        <div id="kanbanCreateResult"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Rundown</legend>
+        <button onclick="generateKanbanRundown()">Generate Kanban Rundown</button>
+        <div id="kanbanResults"></div>
+      </fieldset>
+    </div>
     </div>
     <script>
       const base = location.origin
@@ -208,6 +224,15 @@
       apiKey.addEventListener("change", () => {
         localStorage.setItem("apiKey", apiKey.value)
         loadCategories()
+      })
+
+      const kanbanApiKey = document.getElementById("kanbanApiKey")
+      const savedKanbanKey = localStorage.getItem("kanbanApiKey")
+      if (savedKanbanKey) kanbanApiKey.value = savedKanbanKey
+
+      kanbanApiKey.addEventListener("change", () => {
+        localStorage.setItem("kanbanApiKey", kanbanApiKey.value)
+        loadKanbanColumns()
       })
 
       let conversations = JSON.parse(localStorage.getItem("conversations") || "[]")
@@ -284,6 +309,7 @@
       if (conversations.length === 0) newConversation()
       else loadConversation(conversations[0].id)
       loadCategories()
+      if (kanbanApiKey.value) loadKanbanColumns()
 
       async function req(method, path, body) {
         const r = await fetch(base + path, {
@@ -428,6 +454,40 @@
         } else {
           document.getElementById('exploreList').innerHTML = `Error: ${res.error}`
         }
+      }
+
+      let kanbanColumns = []
+
+      async function loadKanbanColumns() {
+        const select = document.getElementById("kanbanColumn")
+        select.innerHTML = '<option value="">Loading...</option>'
+        const res = await req("POST", "/kanban-board", { kanbanApiKey: kanbanApiKey.value })
+        if (res.columns) {
+          kanbanColumns = res.columns
+          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
+        } else {
+          select.innerHTML = '<option value="">Failed to load columns</option>'
+        }
+      }
+
+      async function createKanbanTask() {
+        const column = document.getElementById("kanbanColumn").value
+        const taskName = document.getElementById("kanbanTaskName").value
+        if (!column || !taskName) return alert("Select a column and enter a task name")
+        document.getElementById("kanbanCreateResult").innerHTML = 'Creating...'
+        const res = await req("POST", "/kanban-create-task", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column })
+        if (res.success) {
+          document.getElementById("kanbanCreateResult").innerHTML = `<div class="msg assistant">Task "${res.taskName}" created in ${res.columnName}</div>`
+          document.getElementById("kanbanTaskName").value = ""
+        } else {
+          document.getElementById("kanbanCreateResult").innerHTML = `<div class="msg" style="color:red">Error: ${res.error}</div>`
+        }
+      }
+
+      async function generateKanbanRundown() {
+        document.getElementById("kanbanResults").innerHTML = '<div class="msg">Generating rundown...</div>'
+        const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value })
+        document.getElementById("kanbanResults").innerHTML = `<div class="msg assistant">${parseMarkdown(res.response || res.error)}</div>`
       }
     </script>
   </body>
