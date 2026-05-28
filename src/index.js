@@ -242,7 +242,7 @@ export class AssistantDurableObject extends DurableObject {
 
       messages.push({ role: "assistant", content: modifiedMessage });
 
-      const lastMsg = (modifiedMessage || "").slice(0, 200);
+      const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200);
       this.#db.exec(
         `UPDATE conversations SET messages = ?, last_message = ? WHERE id = ?`,
         JSON.stringify(messages), lastMsg, conversationId
