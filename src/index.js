@@ -530,6 +530,114 @@ export class AssistantDurableObject extends DurableObject {
       throw err;
     }
   }
+
+  #fetchKanban(apiKey, path) {
+    return fetch(`https://kanbanflow.com/api/v1${path}`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    }).then(res => {
+      if (!res.ok) throw new Error(`KanbanFlow API error: ${res.status} ${res.statusText}`);
+      return res.json();
+    });
+  }
+
+  /**
+   * Fetches the KanbanFlow board structure including column names and IDs.
+   * @param {string} kanbanApiKey
+   * @returns {Promise<{columns: Array<{name: string, uniqueId: string}>, name: string}>}
+   */
+  async getKanbanBoard(kanbanApiKey) {
+    const stage = "getKanbanBoard";
+    try {
+      const board = await this.#fetchKanban(kanbanApiKey, "/board");
+      console.log(`[INFO][${stage}] Board fetched: ${board.name}, columns=${board.columns.length}`);
+      return { columns: board.columns, name: board.name };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Creates a new task in the specified KanbanFlow column.
+   * @param {string} kanbanApiKey
+   * @param {string} taskName
+   * @param {string} columnName
+   * @returns {Promise<{success: boolean, taskId: string, taskName: string, columnName: string}>}
+   */
+  async createKanbanTask(kanbanApiKey, taskName, columnName) {
+    const stage = "createKanbanTask";
+    try {
+      const board = await this.#fetchKanban(kanbanApiKey, "/board");
+      const column = board.columns.find(c => c.name === columnName);
+      if (!column) throw new Error(`Column not found: ${columnName}`);
+
+      const res = await fetch("https://kanbanflow.com/api/v1/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${kanbanApiKey}` },
+        body: JSON.stringify({ name: taskName, columnId: column.uniqueId })
+      });
+
+      if (!res.ok) throw new Error(`KanbanFlow create task error: ${res.status} ${res.statusText}`);
+      const result = await res.json();
+
+      console.log(`[INFO][${stage}] Task created: ${taskName} in column ${columnName}`);
+      return { success: true, taskId: result.taskId, taskName, columnName };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Fetches all tasks from KanbanFlow, groups by column, and sends to AI
+   * for a brief rundown and advice on what to start working on.
+   * @param {string} kanbanApiKey
+   * @returns {Promise<{response: string}>}
+   */
+  async generateKanbanRundown(kanbanApiKey) {
+    const stage = "generateKanbanRundown";
+    try {
+      const tasksData = await this.#fetchKanban(kanbanApiKey, "/tasks");
+      const board = await this.#fetchKanban(kanbanApiKey, "/board");
+
+      const columnMap = {};
+      board.columns.forEach(c => { columnMap[c.uniqueId] = c.name; });
+
+      const tasksByColumn = {};
+      tasksData.forEach(group => {
+        const colName = group.columnName || columnMap[group.columnId] || "Unknown";
+        if (!tasksByColumn[colName]) tasksByColumn[colName] = [];
+        (group.tasks || []).forEach(task => {
+          const subtasks = task.subTasks?.length
+            ? `\n  Subtasks: ${task.subTasks.map(s => `${s.name}${s.finished ? ' ✓' : ''}`).join(', ')}`
+            : '';
+          const color = task.color ? ` [${task.color}]` : '';
+          tasksByColumn[colName].push(`- ${task.name}${color}${subtasks}`);
+        });
+      });
+
+      const taskReport = Object.entries(tasksByColumn)
+        .map(([col, tasks]) => `### ${col}\n${tasks.join('\n')}`)
+        .join('\n\n');
+
+      if (!taskReport.trim()) {
+        return { response: "No tasks found on your KanbanFlow board." };
+      }
+
+      const prompt = `Here are my current KanbanFlow board tasks:\n\n${taskReport}\n\nPlease provide:\n1. A brief rundown of what I'm working on\n2. Advice on what task I should start working on first and why`;
+
+      const response = await this.#runAI(
+        "You are a productive task manager. Be concise and direct.",
+        prompt
+      );
+
+      console.log(`[INFO][${stage}] Rundown generated`);
+      return { response };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
 }
 
 /**
@@ -545,8 +653,19 @@ export default {
     try {
       const id = env.ASSISTANT_DO.idFromName("singleton");
       const stub = env.ASSISTANT_DO.get(id);
-      await stub.updateAllSummaries();
-      console.log(`[INFO][${stage}] Scheduled summary update complete`);
+
+      if (event.cron === "0 11 * * *") {
+        const kanbanApiKey = env.KANBANFLOW_API_KEY;
+        if (kanbanApiKey) {
+          await stub.generateKanbanRundown(kanbanApiKey);
+          console.log(`[INFO][${stage}] Scheduled kanban rundown complete`);
+        } else {
+          console.log(`[INFO][${stage}] Skipping kanban rundown: KANBANFLOW_API_KEY not set`);
+        }
+      } else {
+        await stub.updateAllSummaries();
+        console.log(`[INFO][${stage}] Scheduled summary update complete`);
+      }
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -625,6 +744,47 @@ export default {
         console.log(`[INFO][${stage}] Query category: category=${category}`);
         const result = await stub.queryCategoryByName(category, prompt);
         return Response.json({ category, prompt, response: result.response });
+      }
+
+      if (request.method === "POST" && url.pathname === "/kanban-board") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required. Set KANBANFLOW_API_KEY secret or pass it in the request body." }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Fetching kanban board`);
+        const result = await stub.getKanbanBoard(kanbanApiKey);
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/kanban-create-task") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required." }, { status: 400 });
+        if (!body?.taskName?.trim() || !body?.columnName?.trim())
+          return Response.json({ error: "taskName and columnName are required" }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Creating kanban task: ${body.taskName} in ${body.columnName}`);
+        const result = await stub.createKanbanTask(kanbanApiKey, body.taskName.trim(), body.columnName.trim());
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/kanban-rundown") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required." }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Generating kanban rundown`);
+        const result = await stub.generateKanbanRundown(kanbanApiKey);
+        return Response.json(result);
       }
 
       return Response.json({ error: "Not found" }, { status: 404 });
