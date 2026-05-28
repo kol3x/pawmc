@@ -374,7 +374,7 @@
               ${preview ? `<div class="conv-preview">${escapeHtml(preview)}${preview.length >= 80 ? "…" : ""}</div>` : ""}
               <div class="conv-meta">
                 <span class="conv-time">${time}</span>
-                <button class="conv-delete" onclick="event.stopPropagation();deleteConversation(${c.id})"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+                <button class="conv-delete" aria-label="Delete conversation" title="Delete conversation" onclick="event.stopPropagation();deleteConversation(${c.id})"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
               </div>
             </div>`
           })
@@ -698,7 +698,7 @@
         const res = await req("POST", "/kanban-board", { kanbanApiKey: kanbanApiKey.value })
         if (res.columns) {
           kanbanColumns = res.columns
-          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
+          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("")
         } else {
           select.innerHTML = '<option value="">Failed to load columns</option>'
         }
