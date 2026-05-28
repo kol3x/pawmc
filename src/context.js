@@ -45,8 +45,14 @@ define("kanban-create", async (env, doInstance) => {
   return [
     "## Available Actions",
     "You can create KanbanFlow tasks when asked. Available columns: " + columnNames + ".",
-    'When the user asks to create a task, include this line in your response (one per task):',
-    "⧉ CREATE TASK: <task name> → <column name>",
+    "When the user asks to create a task, use this block format in your response:",
+    "⧉ CREATE TASK",
+    "Name: <task name>",
+    "Column: <column name> (optional — use your best judgment if not specified)",
+    "Description: <description> (optional — generate one from context if it makes sense)",
+    "⧉ END",
+    "Use your judgment to decide the task name, column, and whether a description adds value.",
+    "If the user is vague (e.g. 'add a cool task'), pick reasonable defaults.",
     "Do not ask for confirmation — create it immediately and report back."
   ].join("\n");
 });

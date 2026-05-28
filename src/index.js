@@ -181,18 +181,42 @@ export class AssistantDurableObject extends DurableObject {
       if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
 
       const kanbanKey = this.env.KANBANFLOW_API_KEY;
-      const taskRegex = /⧉ CREATE TASK:\s*(.+?)\s*→\s*(.+?)(?:\n|$)/g;
-      let taskMatch;
       let modifiedMessage = assistantMessage;
-      while ((taskMatch = taskRegex.exec(assistantMessage)) !== null) {
-        const taskName = taskMatch[1].trim();
-        const columnName = taskMatch[2].trim();
-        if (kanbanKey && taskName && columnName) {
+
+      const blockRegex = /⧉ CREATE TASK\n([\s\S]*?)(?:⧉ END|\n\n|$)/g;
+      let blockMatch;
+      while ((blockMatch = blockRegex.exec(assistantMessage)) !== null) {
+        const raw = blockMatch[1].trim();
+        if (!raw) continue;
+        const nameMatch = raw.match(/^Name:\s*(.+)$/m);
+        const colMatch = raw.match(/^Column:\s*(.+)$/m);
+        const descMatch = raw.match(/^Description:\s*(.+)$/m);
+        const taskName = nameMatch?.[1]?.trim();
+        const columnName = colMatch?.[1]?.trim();
+        const description = descMatch?.[1]?.trim();
+        if (kanbanKey && taskName) {
           try {
-            await this.createKanbanTask(kanbanKey, taskName, columnName);
-            modifiedMessage = modifiedMessage.replace(taskMatch[0], `✅ Task created: "${taskName}" in ${columnName}`);
+            await this.createKanbanTask(kanbanKey, taskName, columnName, description);
+            modifiedMessage = modifiedMessage.replace(blockMatch[0], `✅ Task created: "${taskName}"${columnName ? ` in ${columnName}` : ""}`);
           } catch (err) {
-            modifiedMessage = modifiedMessage.replace(taskMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+            modifiedMessage = modifiedMessage.replace(blockMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+          }
+        }
+      }
+
+      const inlineRegex = /⧉ CREATE TASK:\s*(.+?)\s*→\s*(.+?)(?:\n|$)/g;
+      let inlineMatch;
+      while ((inlineMatch = inlineRegex.exec(assistantMessage)) !== null) {
+        if (modifiedMessage.includes(inlineMatch[0])) {
+          const taskName = inlineMatch[1].trim();
+          const columnName = inlineMatch[2].trim();
+          if (kanbanKey && taskName && columnName) {
+            try {
+              await this.createKanbanTask(kanbanKey, taskName, columnName);
+              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `✅ Task created: "${taskName}" in ${columnName}`);
+            } catch (err) {
+              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+            }
           }
         }
       }
@@ -664,27 +688,33 @@ export class AssistantDurableObject extends DurableObject {
    * Creates a new task in the specified KanbanFlow column.
    * @param {string} kanbanApiKey
    * @param {string} taskName
-   * @param {string} columnName
+   * @param {string} [columnName]
+   * @param {string} [description]
    * @returns {Promise<{success: boolean, taskId: string, taskName: string, columnName: string}>}
    */
-  async createKanbanTask(kanbanApiKey, taskName, columnName) {
+  async createKanbanTask(kanbanApiKey, taskName, columnName, description) {
     const stage = "createKanbanTask";
     try {
-      const board = await this.#fetchKanban(kanbanApiKey, "/board");
-      const column = board.columns.find(c => c.name === columnName);
-      if (!column) throw new Error(`Column not found: ${columnName}`);
+      const body = { name: taskName };
+      if (columnName?.trim()) {
+        const board = await this.#fetchKanban(kanbanApiKey, "/board");
+        const column = board.columns.find(c => c.name === columnName);
+        if (!column) throw new Error(`Column not found: ${columnName}`);
+        body.columnId = column.uniqueId;
+      }
+      if (description?.trim()) body.description = description.trim();
 
       const res = await fetch("https://kanbanflow.com/api/v1/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${kanbanApiKey}` },
-        body: JSON.stringify({ name: taskName, columnId: column.uniqueId })
+        body: JSON.stringify(body)
       });
 
       if (!res.ok) throw new Error(`KanbanFlow create task error: ${res.status} ${res.statusText}`);
       const result = await res.json();
 
-      console.log(`[INFO][${stage}] Task created: ${taskName} in column ${columnName}`);
-      return { success: true, taskId: result.taskId, taskName, columnName };
+      console.log(`[INFO][${stage}] Task created: ${taskName}${columnName ? ` in ${columnName}` : ""}`);
+      return { success: true, taskId: result.taskId, taskName, columnName: columnName || "" };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
