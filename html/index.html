@@ -299,11 +299,13 @@
     </div>
     <div id="tab-kanban" class="tab-content">
       <fieldset>
-        <legend>Add Task</legend>
-        <select id="kanbanColumn"><option value="">Select column</option></select>
-        <input id="kanbanTaskName" placeholder="Task name" />
-        <button onclick="createKanbanTask()">Add Task</button>
-        <div id="kanbanCreateResult"></div>
+          <legend>Add Task</legend>
+          <select id="kanbanColumn"><option value="">Select column</option></select>
+          <input id="kanbanTaskName" placeholder="Task name" />
+          <input id="kanbanCategory" placeholder="Category (leave empty to auto-generate)" />
+          <input id="kanbanTopic" placeholder="Topic (leave empty to auto-generate)" />
+          <button id="kanbanAddBtn" onclick="createKanbanTask()">Add Task</button>
+          <div id="kanbanCreateResult"></div>
       </fieldset>
       <fieldset>
         <legend>Rundown</legend>
@@ -346,11 +348,8 @@
         localStorage.setItem("kanbanPrompt", kanbanPrompt.value)
       })
 
-      /**
-       * @typedef {{id: number, category: string, topic: string, created_at: number, last_message: string}} Conversation
-       * @typedef {{name: string}} ContextSource
-       * @typedef {{name: string, topics: Array<{id: number, name: string, summary: string}>}} CategoryData
-       */
+      document.getElementById("kanbanCategory").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
+      document.getElementById("kanbanTopic").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
 
       let conversations = []
       let currentConvId = null
@@ -502,7 +501,7 @@
       }
 
       /**
-       * Switches the active tab.
+       * Switches the active tab, pre-filling kanban fields from chat when first opened.
        * @param {"chat"|"query"|"explore"|"kanban"} tab
        */
       function switchTab(tab) {
@@ -510,6 +509,14 @@
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'))
         document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active')
         document.getElementById(`tab-${tab}`).classList.add('active')
+        if (tab === 'kanban') {
+          const catInput = document.getElementById("kanbanCategory")
+          const topicInput = document.getElementById("kanbanTopic")
+          if (!catInput.value && !topicInput.value) {
+            catInput.value = document.getElementById("category").value
+            topicInput.value = document.getElementById("topic").value
+          }
+        }
       }
 
       /** Queries a specific topic by name with a custom prompt. */
@@ -697,18 +704,39 @@
         }
       }
 
-      /** Creates a kanban task via the backend API. */
+      /** Creates a kanban task. Auto-generates category/topic if empty with a confirm step. */
       async function createKanbanTask() {
         const column = document.getElementById("kanbanColumn").value
         const taskName = document.getElementById("kanbanTaskName").value
+        const catInput = document.getElementById("kanbanCategory")
+        const topicInput = document.getElementById("kanbanTopic")
+        const btn = document.getElementById("kanbanAddBtn")
+        const result = document.getElementById("kanbanCreateResult")
         if (!column || !taskName) return alert("Select a column and enter a task name")
-        document.getElementById("kanbanCreateResult").innerHTML = 'Creating...'
-        const res = await req("POST", "/kanban-create-task", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column })
+
+        const needSuggest = !catInput.value.trim() || !topicInput.value.trim()
+        if (needSuggest) {
+          result.innerHTML = "Generating category/topic..."
+          btn.disabled = true
+          const suggest = await req("POST", "/kanban-suggest-category", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column })
+          btn.disabled = false
+          if (suggest.category) catInput.value = suggest.category
+          if (suggest.topic) topicInput.value = suggest.topic
+          result.innerHTML = `<div class="msg" style="font-size:13px;opacity:0.8">Auto-filled: <b>${catInput.value} / ${topicInput.value}</b> — review and click Add Task again to confirm.</div>`
+          btn.textContent = "Confirm Add Task"
+          return
+        }
+
+        btn.textContent = "Add Task"
+        result.innerHTML = "Creating..."
+        btn.disabled = true
+        const res = await req("POST", "/kanban-create-task", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column, category: catInput.value.trim(), topic: topicInput.value.trim() })
+        btn.disabled = false
         if (res.success) {
-          document.getElementById("kanbanCreateResult").innerHTML = `<div class="msg assistant">Task "${res.taskName}" created in ${res.columnName}</div>`
+          result.innerHTML = `<div class="msg assistant">✅ Task "<b>${res.taskName}</b>" created in ${res.columnName}<br><span style="opacity:0.7;font-size:12px">Stored under ${catInput.value} / ${topicInput.value}</span></div>`
           document.getElementById("kanbanTaskName").value = ""
         } else {
-          document.getElementById("kanbanCreateResult").innerHTML = `<div class="msg" style="color:red">Error: ${res.error}</div>`
+          result.innerHTML = `<div class="msg" style="color:red">Error: ${res.error}</div>`
         }
       }
 

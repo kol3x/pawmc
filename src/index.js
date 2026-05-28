@@ -801,6 +801,49 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
+   * Suggests a category and topic for a kanban task using AI, checking existing categories first.
+   * @param {string} kanbanApiKey
+   * @param {string} taskName
+   * @param {string} [columnName]
+   * @returns {Promise<{category: string, topic: string}>}
+   */
+  async suggestKanbanCategory(kanbanApiKey, taskName, columnName) {
+    const stage = "suggestKanbanCategory";
+    try {
+      const existing = [...this.#db.exec("SELECT name FROM categories ORDER BY name").toArray()];
+      const existingCategories = existing.map(c => c.name);
+
+      const prompt = [
+        "Suggest a category and topic for a KanbanFlow task.",
+        `Task: "${taskName}"`,
+        columnName ? `Column: "${columnName}"` : null,
+        existingCategories.length ? `Existing categories: ${existingCategories.join(", ")}` : "No existing categories yet.",
+        "If an existing category fits, use it. Otherwise create a concise new one.",
+        "Respond with EXACTLY: CATEGORY: <name>\nTOPIC: <topic>"
+      ].filter(Boolean).join("\n");
+
+      const response = await this.#runAI(
+        "You organize tasks into categories. Reply only with the requested format.",
+        prompt
+      );
+
+      let category = "";
+      let topic = "";
+      for (const line of response.split("\n")) {
+        if (line.startsWith("CATEGORY:")) category = line.slice(9).trim();
+        if (line.startsWith("TOPIC:")) topic = line.slice(6).trim();
+      }
+      if (!category) category = columnName || "Kanban";
+      if (!topic) topic = taskName.slice(0, 60);
+
+      return { category, topic };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      return { category: columnName || "Kanban", topic: taskName.slice(0, 60) };
+    }
+  }
+
+  /**
    * Suggests a category and topic for a chat message using AI, checking existing pairs first.
    * @param {string} message
    * @returns {Promise<{category: string, topic: string}>}
@@ -1036,6 +1079,20 @@ export default {
         return Response.json(result);
       }
 
+      if (request.method === "POST" && url.pathname === "/kanban-suggest-category") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required." }, { status: 400 });
+        if (!body?.taskName?.trim())
+          return Response.json({ error: "taskName is required" }, { status: 400 });
+
+        const result = await stub.suggestKanbanCategory(kanbanApiKey, body.taskName.trim(), body?.columnName?.trim());
+        return Response.json(result);
+      }
+
       if (request.method === "POST" && url.pathname === "/kanban-create-task") {
         let body;
         try { body = await request.json(); } catch {
@@ -1047,8 +1104,20 @@ export default {
           return Response.json({ error: "taskName and columnName are required" }, { status: 400 });
 
         console.log(`[INFO][${stage}] Creating kanban task: ${body.taskName} in ${body.columnName}`);
-        const result = await stub.createKanbanTask(kanbanApiKey, body.taskName.trim(), body.columnName.trim());
-        return Response.json(result);
+        const taskResult = await stub.createKanbanTask(kanbanApiKey, body.taskName.trim(), body.columnName.trim());
+
+        if (taskResult.success && body?.category?.trim() && body?.topic?.trim()) {
+          try {
+            await stub.storeConversationMessage(body.category.trim(), body.topic.trim(), [
+              { role: "user", content: `Created kanban task "${body.taskName}" in ${body.columnName}` },
+              { role: "assistant", content: `✅ Task created: "${body.taskName}" in ${body.columnName}` }
+            ]);
+          } catch (err) {
+            console.error(`[ERROR][${stage}] Failed to store conversation: ${err.message}`);
+          }
+        }
+
+        return Response.json(taskResult);
       }
 
       if (request.method === "POST" && url.pathname === "/kanban-rundown") {
