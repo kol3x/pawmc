@@ -532,22 +532,48 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
-   * Returns all conversations with category and topic names, ordered by most recent.
-   * @returns {Promise<Array<{id: number, category: string, topic: string}>>}
+   * Returns all conversations with category, topic, timestamp, and last message preview, ordered by most recent.
+   * @returns {Promise<Array<{id: number, category: string, topic: string, created_at: number, last_message: string}>>}
    */
   async listConversations() {
     const stage = "listConversations";
     try {
       const rows = [...this.#db.exec(`
-        SELECT c.id, cat.name as category, t.name as topic
+        SELECT c.id, c.created_at_timestamp, c.messages, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
         ORDER BY c.created_at_timestamp DESC
         LIMIT 50
       `).toArray()];
-      console.log(`[INFO][${stage}] Listed ${rows.length} conversations`);
-      return rows;
+      const result = rows.map(r => {
+        let lastMessage = "";
+        try {
+          const msgs = JSON.parse(r.messages);
+          const last = msgs[msgs.length - 1];
+          if (last) lastMessage = (last.content || last.text || "").slice(0, 80);
+        } catch {}
+        return { id: r.id, category: r.category, topic: r.topic, created_at: r.created_at_timestamp, last_message: lastMessage };
+      });
+      console.log(`[INFO][${stage}] Listed ${result.length} conversations`);
+      return result;
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Deletes a conversation by id.
+   * @param {number} id
+   * @returns {Promise<{success: boolean}>}
+   */
+  async deleteConversation(id) {
+    const stage = "deleteConversation";
+    try {
+      this.#db.exec(`DELETE FROM conversations WHERE id = ?`, id);
+      console.log(`[INFO][${stage}] Deleted conversation: id=${id}`);
+      return { success: true };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -775,6 +801,14 @@ export default {
         if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
         console.log(`[INFO][${stage}] Fetching conversation: id=${id}`);
         const result = await stub.getConversation(parseInt(id));
+        return Response.json(result);
+      }
+
+      if (request.method === "DELETE" && url.pathname === "/conversation") {
+        const id = url.searchParams.get("id");
+        if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
+        console.log(`[INFO][${stage}] Deleting conversation: id=${id}`);
+        const result = await stub.deleteConversation(parseInt(id));
         return Response.json(result);
       }
 

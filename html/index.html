@@ -83,25 +83,114 @@
         position: fixed;
         left: 0;
         top: 0;
-        width: 200px;
+        width: 280px;
         height: 100%;
         background: var(--input-bg);
         border-right: 1px solid var(--border);
-        padding: 10px;
-        overflow-y: auto;
-        text-align: center;
+        display: flex;
+        flex-direction: column;
+        z-index: 10;
       }
-      #main { margin-left: 210px; max-width: 900px; }
-      .conv-item {
-        padding: 8px;
-        cursor: pointer;
+      #main { margin-left: 290px; max-width: 900px; }
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .sidebar-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
+      .sidebar-actions { display: flex; gap: 6px; }
+      .sidebar-actions button {
+        width: 32px; height: 32px; padding: 0;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 6px;
         border: 1px solid var(--border);
-        margin: 4px 0;
-        border-radius: 4px;
-        text-align: center;
+        background: var(--input-bg);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .sidebar-actions button:hover { background: var(--code-bg); }
+      #sidebarSearch {
+        margin: 8px 12px; padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        font-size: 13px;
+        width: auto;
+      }
+      #sidebarSearch::placeholder { color: var(--blockquote); }
+      #conversations {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 8px;
+      }
+      .conv-item {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        cursor: pointer;
+        border-radius: 8px;
+        margin: 2px 0;
+        text-align: left;
+        border: none;
+        background: transparent;
+        color: var(--text);
+        transition: background 0.15s;
       }
       .conv-item:hover { background: var(--code-bg); }
       .conv-item.active { background: var(--user); color: #fff; }
+      .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
+      .conv-title {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .conv-preview {
+        font-size: 12px;
+        opacity: 0.7;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .conv-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 4px;
+      }
+      .conv-time { font-size: 11px; opacity: 0.5; }
+      .conv-delete {
+        font-size: 11px;
+        opacity: 0;
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+      .conv-item:hover .conv-delete { opacity: 0.5; }
+      .conv-delete:hover { opacity: 1 !important; background: rgba(255,0,0,0.15); }
+      .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
+      .update-btn {
+        margin: 8px 12px;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--input-bg);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+      .update-btn:hover { background: var(--code-bg); }
       .tabs { display: flex; gap: 10px; margin-bottom: 10px; }
       .tab { padding: 10px 20px; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); }
       .tab.active { background: var(--user); color: #fff; }
@@ -146,10 +235,15 @@
   </head>
   <body>
     <div id="sidebar">
-      <h3>Conversations</h3>
-      <button onclick="newConversation()">Start conversation</button>
-      <button onclick="updateSummaries()">Update Summaries</button>
+      <div class="sidebar-header">
+        <h3>Conversations</h3>
+        <div class="sidebar-actions">
+          <button onclick="newConversation()" title="New conversation">+</button>
+        </div>
+      </div>
+      <input id="sidebarSearch" type="text" placeholder="Search conversations..." oninput="renderConversations()" />
       <div id="conversations"></div>
+      <button class="update-btn" onclick="updateSummaries()">⟳ Update Summaries</button>
     </div>
     <div id="main">
     <h1>Personal Assistant</h1>
@@ -250,14 +344,41 @@
 
       function renderConversations() {
         const container = document.getElementById("conversations")
-        container.innerHTML = conversations
-          .map(
-            (c) => {
-              const label = [c.category, c.topic].filter(Boolean).join(" / ");
-              return `<div class="conv-item ${c.id === currentConvId ? "active" : ""}" onclick="loadConversation(${c.id})">${label || "New"}</div>`;
-            },
-          )
+        const search = (document.getElementById("sidebarSearch")?.value || "").toLowerCase()
+        const filtered = conversations.filter(c => {
+          if (!search) return true
+          return (c.category + " " + c.topic + " " + (c.last_message || "")).toLowerCase().includes(search)
+        })
+        container.innerHTML = filtered
+          .map(c => {
+            const label = [c.category, c.topic].filter(Boolean).join(" / ")
+            const preview = c.last_message || ""
+            const time = c.created_at ? relativeTime(c.created_at) : ""
+            const isActive = c.id === currentConvId
+            return `<div class="conv-item ${isActive ? "active" : ""}" onclick="loadConversation(${c.id})">
+              <div class="conv-title">${escapeHtml(label) || "New conversation"}</div>
+              ${preview ? `<div class="conv-preview">${escapeHtml(preview)}${preview.length >= 80 ? "…" : ""}</div>` : ""}
+              <div class="conv-meta">
+                <span class="conv-time">${time}</span>
+                <button class="conv-delete" onclick="event.stopPropagation();deleteConversation(${c.id})">✕</button>
+              </div>
+            </div>`
+          })
           .join("")
+        if (!filtered.length) {
+          container.innerHTML = '<div style="text-align:center;padding:20px;opacity:0.5;font-size:13px">No conversations</div>'
+        }
+      }
+
+      function relativeTime(timestamp) {
+        const now = Math.floor(Date.now() / 1000)
+        const diff = now - timestamp
+        if (diff < 60) return "just now"
+        if (diff < 3600) return Math.floor(diff / 60) + "m ago"
+        if (diff < 86400) return Math.floor(diff / 3600) + "h ago"
+        if (diff < 172800) return "yesterday"
+        if (diff < 604800) return Math.floor(diff / 86400) + "d ago"
+        return new Date(timestamp * 1000).toLocaleDateString()
       }
 
       function newConversation() {
@@ -266,6 +387,7 @@
         category.value = ""
         topic.value = ""
         msgs.innerHTML = ""
+        document.getElementById("sidebarSearch").value = ""
         renderConversations()
       }
 
@@ -304,15 +426,24 @@
         }
       }
 
+      async function deleteConversation(id) {
+        if (!confirm("Delete this conversation?")) return
+        await req("DELETE", `/conversation?id=${id}`)
+        if (currentConvId === id) newConversation()
+        await refreshConversations()
+      }
+
       newConversation()
       refreshConversations()
       loadCategories()
       if (kanbanApiKey.value) loadKanbanColumns()
 
       async function req(method, path, body) {
+        const headers = { Authorization: `Bearer ${apiKey.value}` }
+        if (body) headers["Content-Type"] = "application/json"
         const r = await fetch(base + path, {
           method,
-          headers: { Authorization: `Bearer ${apiKey.value}`, "Content-Type": "application/json" },
+          headers,
           body: body ? JSON.stringify(body) : undefined,
         })
         return r.json()
