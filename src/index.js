@@ -721,6 +721,40 @@ export class AssistantDurableObject extends DurableObject {
       throw err;
     }
   }
+
+  /**
+   * Stores messages as a new conversation in the given category/topic without calling AI.
+   * Creates the category and topic if they don't exist.
+   * @param {string} category
+   * @param {string} topic
+   * @param {Array<{role: string, content: string}>} messages
+   * @returns {{conversationId: number}}
+   */
+  async storeConversationMessage(category, topic, messages) {
+    const stage = "storeConversationMessage";
+    try {
+      const categoryRow = this.#db.exec(
+        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
+        category.trim()
+      ).one();
+
+      const topicRow = this.#db.exec(
+        `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id`,
+        categoryRow.id, topic.trim()
+      ).one();
+
+      const conv = this.#db.exec(
+        `INSERT INTO conversations (topic_id, messages) VALUES (?, ?) RETURNING id`,
+        topicRow.id, JSON.stringify(messages)
+      ).one();
+
+      console.log(`[INFO][${stage}] Stored ${messages.length} messages in ${category}/${topic}, conversation=${conv.id}`);
+      return { conversationId: conv.id };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
 }
 
 /**
@@ -740,8 +774,12 @@ export default {
       if (event.cron === "0 11 * * *") {
         const kanbanApiKey = env.KANBANFLOW_API_KEY;
         if (kanbanApiKey) {
-          await stub.generateKanbanRundown(kanbanApiKey);
-          console.log(`[INFO][${stage}] Scheduled kanban rundown complete`);
+          const result = await stub.generateKanbanRundown(kanbanApiKey);
+          const today = new Date().toISOString().split("T")[0];
+          await stub.storeConversationMessage("Kanban", today, [
+            { role: "assistant", content: result.response }
+          ]);
+          console.log(`[INFO][${stage}] Scheduled kanban rundown stored in Kanban/${today}`);
         } else {
           console.log(`[INFO][${stage}] Skipping kanban rundown: KANBANFLOW_API_KEY not set`);
         }
