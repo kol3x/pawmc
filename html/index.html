@@ -269,7 +269,7 @@
       <datalist id="topicList"></datalist>
       <textarea id="message" placeholder="Message"></textarea>
       <div id="contextSources"></div>
-      <button onclick="send()">Send</button>
+      <button id="sendBtn" onclick="send()">Send</button>
       <div id="messages"></div>
     </div>
     <div id="tab-query" class="tab-content">
@@ -581,9 +581,21 @@
         return [...document.querySelectorAll("#contextSources input:checked")].map(cb => cb.value)
       }
 
-      /** Sends a chat message after validating inputs. */
+      /** Sends a chat message. Auto-generates category/topic if empty with a confirm step. */
       async function send() {
-        if (!apiKey.value || !category.value || !topic.value || !message.value) return alert("Fill all fields")
+        const btn = document.getElementById("sendBtn")
+        if (!apiKey.value || !message.value) return alert("Fill API key and message")
+        if (!category.value.trim() || !topic.value.trim()) {
+          btn.disabled = true
+          btn.textContent = "Generating..."
+          const suggest = await req("POST", "/suggest-category", { message: message.value })
+          btn.disabled = false
+          if (suggest.category) category.value = suggest.category
+          if (suggest.topic) topic.value = suggest.topic
+          btn.textContent = "Confirm Send"
+          return
+        }
+        btn.textContent = "Send"
         addMsg("user", message.value)
         const contextSources = getSelectedContextSources()
         const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value, contextSources: contextSources.length ? contextSources : undefined })
@@ -651,10 +663,12 @@
       })
 
       category.addEventListener("input", function() {
+        document.getElementById("sendBtn").textContent = "Send"
         const cat = categoriesData.find(c => c.name === this.value)
         const topicList = document.getElementById("topicList")
         topicList.innerHTML = cat ? cat.topics.map(t => `<option value="${t.name}">`).join("") : categoriesData.flatMap(c => c.topics.map(t => `<option value="${t.name}">`)).join("")
       })
+      topic.addEventListener("input", () => { document.getElementById("sendBtn").textContent = "Send" })
 
       /** Triggers a manual summary update on the server, then reloads categories. */
       async function updateSummaries() {

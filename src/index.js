@@ -801,6 +801,46 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
+   * Suggests a category and topic for a chat message using AI, checking existing pairs first.
+   * @param {string} message
+   * @returns {Promise<{category: string, topic: string}>}
+   */
+  async suggestCategory(message) {
+    const stage = "suggestCategory";
+    try {
+      const existing = [...this.#db.exec(`SELECT DISTINCT c.name as category, t.name as topic FROM categories c JOIN topics t ON t.category_id = c.id ORDER BY c.name`).toArray()];
+      const existingPairs = existing.map(r => `${r.category}/${r.topic}`);
+
+      const prompt = [
+        "Suggest a category and topic for this message.",
+        `Message: "${message}"`,
+        existingPairs.length ? `Existing options: ${existingPairs.join(", ")}` : "No existing pairs yet.",
+        "If an existing pair fits, use it. Otherwise create a concise new category and topic.",
+        "Respond with EXACTLY: CATEGORY: <name>\nTOPIC: <topic>"
+      ].filter(Boolean).join("\n");
+
+      const response = await this.#runAI(
+        "You categorize messages. Reply only with the requested format.",
+        prompt
+      );
+
+      let category = "";
+      let topic = "";
+      for (const line of response.split("\n")) {
+        if (line.startsWith("CATEGORY:")) category = line.slice(9).trim();
+        if (line.startsWith("TOPIC:")) topic = line.slice(6).trim();
+      }
+      if (!category) category = "General";
+      if (!topic) topic = message.slice(0, 60);
+
+      return { category, topic };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      return { category: "General", topic: message.slice(0, 60) };
+    }
+  }
+
+  /**
    * Stores messages as a new conversation in the given category/topic without calling AI.
    * Creates the category and topic if they don't exist.
    * @param {string} category
@@ -969,6 +1009,18 @@ export default {
         console.log(`[INFO][${stage}] Query category: category=${category}`);
         const result = await stub.queryCategoryByName(category, prompt);
         return Response.json({ category, prompt, response: result.response });
+      }
+
+      if (request.method === "POST" && url.pathname === "/suggest-category") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        if (!body?.message?.trim())
+          return Response.json({ error: "message is required" }, { status: 400 });
+
+        const result = await stub.suggestCategory(body.message.trim());
+        return Response.json(result);
       }
 
       if (request.method === "POST" && url.pathname === "/kanban-board") {
