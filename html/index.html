@@ -205,6 +205,7 @@
       </fieldset>
       <fieldset>
         <legend>Rundown</legend>
+        <textarea id="kanbanPrompt" placeholder="Custom prompt (optional — defaults to asking for a rundown and starting advice)">What's on my plate today and what should I prioritize?</textarea>
         <button onclick="generateKanbanRundown()">Generate Kanban Rundown</button>
         <div id="kanbanResults"></div>
       </fieldset>
@@ -233,6 +234,14 @@
       kanbanApiKey.addEventListener("change", () => {
         localStorage.setItem("kanbanApiKey", kanbanApiKey.value)
         loadKanbanColumns()
+      })
+
+      const kanbanPrompt = document.getElementById("kanbanPrompt")
+      const savedKanbanPrompt = localStorage.getItem("kanbanPrompt")
+      if (savedKanbanPrompt) kanbanPrompt.value = savedKanbanPrompt
+
+      kanbanPrompt.addEventListener("change", () => {
+        localStorage.setItem("kanbanPrompt", kanbanPrompt.value)
       })
 
       let conversations = JSON.parse(localStorage.getItem("conversations") || "[]")
@@ -486,7 +495,7 @@
 
       async function generateKanbanRundown() {
         document.getElementById("kanbanResults").innerHTML = '<div class="msg">Generating rundown...</div>'
-        const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value })
+        const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value, customPrompt: kanbanPrompt.value || undefined })
         document.getElementById("kanbanResults").innerHTML = `<div class="msg assistant">${parseMarkdown(res.response || res.error)}</div>`
       }
     </script>
