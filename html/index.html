@@ -244,13 +244,9 @@
         localStorage.setItem("kanbanPrompt", kanbanPrompt.value)
       })
 
-      let conversations = JSON.parse(localStorage.getItem("conversations") || "[]")
+      let conversations = []
       let currentConvId = null
-
-      function saveConversations() {
-        localStorage.setItem("conversations", JSON.stringify(conversations))
-        renderConversations()
-      }
+      let currentMessages = []
 
       function renderConversations() {
         const container = document.getElementById("conversations")
@@ -265,22 +261,28 @@
       }
 
       function newConversation() {
-        const conv = { id: Date.now(), category: "", topic: "", messages: [] }
-        conversations.unshift(conv)
-        currentConvId = conv.id
+        currentConvId = null
+        currentMessages = []
         category.value = ""
         topic.value = ""
         msgs.innerHTML = ""
-        saveConversations()
+        renderConversations()
       }
 
-      function loadConversation(id) {
+      async function loadConversation(id) {
         const conv = conversations.find((c) => c.id === id)
         if (!conv) return
         currentConvId = id
         category.value = conv.category || ""
         topic.value = conv.topic || ""
-        msgs.innerHTML = conv.messages
+        msgs.innerHTML = '<div class="msg">Loading...</div>'
+        const res = await req("GET", `/conversation?id=${id}`)
+        if (res.messages) {
+          currentMessages = res.messages.map(m => ({ role: m.role, text: m.content }))
+        } else {
+          currentMessages = []
+        }
+        msgs.innerHTML = currentMessages
           .map((m) => `<div class="msg ${m.role}"><b>${m.role}:</b> ${m.role === "assistant" ? parseMarkdown(m.text) : m.text}</div>`)
           .join("")
         msgs.scrollTop = msgs.scrollHeight
@@ -291,32 +293,19 @@
         const content = role === 'assistant' ? parseMarkdown(text) : text
         msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
         msgs.scrollTop = msgs.scrollHeight
-        const conv = conversations.find((c) => c.id === currentConvId)
-        if (conv) {
-          conv.messages.push({ role, text })
-          conv.category = category.value
-          conv.topic = topic.value
-          saveConversations()
+        currentMessages.push({ role, text })
+      }
+
+      async function refreshConversations() {
+        const res = await req("GET", "/conversations")
+        if (Array.isArray(res)) {
+          conversations = res
+          renderConversations()
         }
       }
 
-      category.addEventListener("change", () => {
-        const conv = conversations.find((c) => c.id === currentConvId)
-        if (conv) {
-          conv.category = category.value
-          saveConversations()
-        }
-      })
-      topic.addEventListener("change", () => {
-        const conv = conversations.find((c) => c.id === currentConvId)
-        if (conv) {
-          conv.topic = topic.value
-          saveConversations()
-        }
-      })
-
-      if (conversations.length === 0) newConversation()
-      else loadConversation(conversations[0].id)
+      newConversation()
+      refreshConversations()
       loadCategories()
       if (kanbanApiKey.value) loadKanbanColumns()
 
@@ -391,6 +380,8 @@
         const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value })
         addMsg("assistant", res.response || res.error)
         message.value = ""
+        if (res.conversationId) currentConvId = res.conversationId
+        await refreshConversations()
       }
 
       let categoriesData = []

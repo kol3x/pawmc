@@ -531,6 +531,54 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
+  /**
+   * Returns all conversations with category and topic names, ordered by most recent.
+   * @returns {Promise<Array<{id: number, category: string, topic: string}>>}
+   */
+  async listConversations() {
+    const stage = "listConversations";
+    try {
+      const rows = [...this.#db.exec(`
+        SELECT c.id, cat.name as category, t.name as topic
+        FROM conversations c
+        JOIN topics t ON t.id = c.topic_id
+        JOIN categories cat ON cat.id = t.category_id
+        ORDER BY c.created_at_timestamp DESC
+        LIMIT 50
+      `).toArray()];
+      console.log(`[INFO][${stage}] Listed ${rows.length} conversations`);
+      return rows;
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Returns a single conversation with its messages.
+   * @param {number} id
+   * @returns {Promise<{id: number, category: string, topic: string, messages: Array<{role: string, content: string}>}>}
+   */
+  async getConversation(id) {
+    const stage = "getConversation";
+    try {
+      const row = this.#db.exec(`
+        SELECT c.id, c.messages, cat.name as category, t.name as topic
+        FROM conversations c
+        JOIN topics t ON t.id = c.topic_id
+        JOIN categories cat ON cat.id = t.category_id
+        WHERE c.id = ?
+      `, id).one();
+      if (!row) throw new Error(`Conversation not found: ${id}`);
+      const messages = JSON.parse(row.messages);
+      console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`);
+      return { id: row.id, category: row.category, topic: row.topic, messages };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
   #fetchKanban(apiKey, path) {
     return fetch(`https://kanbanflow.com/api/v1${path}`, {
       headers: { Authorization: `Bearer ${apiKey}` }
@@ -714,6 +762,20 @@ export default {
         console.log(`[INFO][${stage}] Fetching categories`);
         const categories = await stub.getCategories();
         return Response.json(categories);
+      }
+
+      if (request.method === "GET" && url.pathname === "/conversations") {
+        console.log(`[INFO][${stage}] Listing conversations`);
+        const result = await stub.listConversations();
+        return Response.json(result);
+      }
+
+      if (request.method === "GET" && url.pathname === "/conversation") {
+        const id = url.searchParams.get("id");
+        if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
+        console.log(`[INFO][${stage}] Fetching conversation: id=${id}`);
+        const result = await stub.getConversation(parseInt(id));
+        return Response.json(result);
       }
 
       if (request.method === "POST" && url.pathname === "/update-summaries") {
