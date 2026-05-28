@@ -472,7 +472,7 @@
         const res = await req("GET", "/context-sources")
         if (Array.isArray(res)) {
           const container = document.getElementById("contextSources")
-          container.innerHTML = res.map(s => `<label><input type="checkbox" value="${s.name}" /> ${s.name}</label>`).join("")
+          container.innerHTML = res.map(s => `<label><input type="checkbox" value="${escapeHtml(s.name)}" /> ${escapeHtml(s.name)}</label>`).join("")
         }
       }
 
@@ -698,7 +698,7 @@
         const res = await req("POST", "/kanban-board", { kanbanApiKey: kanbanApiKey.value })
         if (res.columns) {
           kanbanColumns = res.columns
-          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${c.name}">${escapeHtml(c.name)}</option>`).join("")
+          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("")
         } else {
           select.innerHTML = '<option value="">Failed to load columns</option>'
         }
