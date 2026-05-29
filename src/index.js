@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { resolve as resolveContexts, list as listContextSources } from "./context.js";
 
 /**
  * Cloudflare Worker that uses SQLite-backed Durable Object. Works as a personal LLM assistant. It stores conversations and can uses summed up context when generating responses.
@@ -79,6 +80,7 @@ export class AssistantDurableObject extends DurableObject {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         topic_id INTEGER NOT NULL,
         messages TEXT NOT NULL DEFAULT '[]',
+        last_message TEXT NOT NULL DEFAULT '',
         created_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
         FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
       );
@@ -95,6 +97,11 @@ export class AssistantDurableObject extends DurableObject {
     if (!hasUpdatedAtTimestampTopics) {
       await this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
     }
+
+    const convColumns = this.#db.exec(`PRAGMA table_info(conversations)`).toArray();
+    if (!convColumns.some(col => col.name === 'last_message')) {
+      await this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`);
+    }
   }
 
   /**
@@ -102,16 +109,17 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} category
    * @param {string} topic
    * @param {string} userMessage
+   * @param {string[]} [contextSources] - Optional names of context providers to inject (e.g. "kanban-rundown")
    * @returns {Promise<{response: string, conversationId: number}>}
    */
-  async chat(category, topic, userMessage) {
+  async chat(category, topic, userMessage, contextSources = []) {
     const stage = "chat";
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
         throw new Error(`[${stage}] Invalid input: category, topic, and userMessage are required`);
 
       const categoryRow = this.#db.exec(
-        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
+        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id, summary`,
         category.trim()
       ).one();
       console.log(`[INFO][${stage}] Category resolved: id=${categoryRow.id}, name=${category}`);
@@ -147,11 +155,21 @@ export class AssistantDurableObject extends DurableObject {
 
       messages.push({ role: "user", content: userMessage });
 
+      const contextParts = [];
+      if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`);
+      if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
+      if (!contextParts.length) contextParts.push("You have no prior context about this topic. Ask the user about their situation if needed.");
+
+      if (contextSources.length) {
+        const injected = await resolveContexts(this.env, this, contextSources);
+        contextParts.push(...injected);
+      }
+
       const systemPrompt = [
         this.env.AI_SYSTEM_INSTRUCTION,
         `You are a personal assistant helping with: ${category} / ${topic}.`,
-        topicRow.summary ? `Context summary: ${topicRow.summary}` : null
-      ].filter(Boolean).join("\n");
+        ...contextParts
+      ].join("\n");
 
       const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
         messages: [
@@ -168,15 +186,70 @@ export class AssistantDurableObject extends DurableObject {
       }
       if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
 
-      messages.push({ role: "assistant", content: assistantMessage });
+      const kanbanKey = this.env.KANBANFLOW_API_KEY;
+      const allowTaskCreation = kanbanKey && contextSources.includes("kanban-create");
+      let modifiedMessage = assistantMessage;
+      let boardColumnsCache = null;
+      const getColumnId = async (colName) => {
+        if (!boardColumnsCache) {
+          const board = await this.#fetchKanban(kanbanKey, "/board");
+          boardColumnsCache = board.columns;
+        }
+        const column = boardColumnsCache.find(c => c.name === colName);
+        if (!column) throw new Error(`Column not found: ${colName}`);
+        return column.uniqueId;
+      };
 
+      const blockRegex = /⧉ CREATE TASK\n([\s\S]*?)(?:⧉ END|\n\n|$)/g;
+      let blockMatch;
+      while ((blockMatch = blockRegex.exec(assistantMessage)) !== null) {
+        const raw = blockMatch[1].trim();
+        if (!raw) continue;
+        const nameMatch = raw.match(/^Name:\s*(.+)$/m);
+        const colMatch = raw.match(/^Column:\s*(.+)$/m);
+        const descMatch = raw.match(/^Description:\s*(.+)$/m);
+        const taskName = nameMatch?.[1]?.trim();
+        const columnName = colMatch?.[1]?.trim();
+        const description = descMatch?.[1]?.trim();
+        if (allowTaskCreation && taskName) {
+          try {
+            const columnId = columnName ? await getColumnId(columnName) : undefined;
+            await this.createKanbanTask(kanbanKey, taskName, columnId, description);
+            modifiedMessage = modifiedMessage.replace(blockMatch[0], `✅ Task created: "${taskName}"${columnName ? ` in ${columnName}` : ""}`);
+          } catch (err) {
+            modifiedMessage = modifiedMessage.replace(blockMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+          }
+        }
+      }
+
+      const inlineRegex = /⧉ CREATE TASK:\s*(.+?)\s*→\s*(.+?)(?:\n|$)/g;
+      let inlineMatch;
+      while ((inlineMatch = inlineRegex.exec(assistantMessage)) !== null) {
+        if (modifiedMessage.includes(inlineMatch[0])) {
+          const taskName = inlineMatch[1].trim();
+          const columnName = inlineMatch[2].trim();
+          if (allowTaskCreation && taskName && columnName) {
+            try {
+              const columnId = await getColumnId(columnName);
+              await this.createKanbanTask(kanbanKey, taskName, columnId);
+              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `✅ Task created: "${taskName}" in ${columnName}`);
+            } catch (err) {
+              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+            }
+          }
+        }
+      }
+
+      messages.push({ role: "assistant", content: modifiedMessage });
+
+      const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200);
       this.#db.exec(
-        `UPDATE conversations SET messages = ? WHERE id = ?`,
-        JSON.stringify(messages), conversationId
+        `UPDATE conversations SET messages = ?, last_message = ? WHERE id = ?`,
+        JSON.stringify(messages), lastMsg, conversationId
       );
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`);
 
-      return { response: assistantMessage, conversationId };
+      return { response: modifiedMessage, conversationId };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -530,6 +603,329 @@ export class AssistantDurableObject extends DurableObject {
       throw err;
     }
   }
+
+  /**
+   * Returns all conversations with category, topic, timestamp, and last message preview, ordered by most recent.
+   * @returns {Promise<Array<{id: number, category: string, topic: string, created_at: number, last_message: string}>>}
+   */
+  async listConversations() {
+    const stage = "listConversations";
+    try {
+      const rows = [...this.#db.exec(`
+        SELECT c.id, c.created_at_timestamp, c.last_message, cat.name as category, t.name as topic
+        FROM conversations c
+        JOIN topics t ON t.id = c.topic_id
+        JOIN categories cat ON cat.id = t.category_id
+        ORDER BY c.created_at_timestamp DESC
+        LIMIT 50
+      `).toArray()];
+      const result = rows.map(r => ({
+        id: r.id, category: r.category, topic: r.topic, created_at: r.created_at_timestamp,
+        last_message: (r.last_message || "").slice(0, 80)
+      }));
+      console.log(`[INFO][${stage}] Listed ${result.length} conversations`);
+      return result;
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Deletes a conversation by id.
+   * @param {number} id
+   * @returns {Promise<{success: boolean}>}
+   */
+  async deleteConversation(id) {
+    const stage = "deleteConversation";
+    try {
+      this.#db.exec(`DELETE FROM conversations WHERE id = ?`, id);
+      console.log(`[INFO][${stage}] Deleted conversation: id=${id}`);
+      return { success: true };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Returns a single conversation with its messages.
+   * @param {number} id
+   * @returns {Promise<{id: number, category: string, topic: string, messages: Array<{role: string, content: string}>}>}
+   */
+  async getConversation(id) {
+    const stage = "getConversation";
+    try {
+      const row = this.#db.exec(`
+        SELECT c.id, c.messages, cat.name as category, t.name as topic
+        FROM conversations c
+        JOIN topics t ON t.id = c.topic_id
+        JOIN categories cat ON cat.id = t.category_id
+        WHERE c.id = ?
+      `, id).one();
+      if (!row) throw new Error(`Conversation not found: ${id}`);
+      const messages = JSON.parse(row.messages);
+      console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`);
+      return { id: row.id, category: row.category, topic: row.topic, messages };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  #fetchKanban(apiKey, path) {
+    return fetch(`https://kanbanflow.com/api/v1${path}`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    }).then(res => {
+      if (!res.ok) throw new Error(`KanbanFlow API error: ${res.status} ${res.statusText}`);
+      return res.json();
+    });
+  }
+
+  /**
+   * Fetches the KanbanFlow board structure including column names and IDs.
+   * @param {string} kanbanApiKey
+   * @returns {Promise<{columns: Array<{name: string, uniqueId: string}>, name: string}>}
+   */
+  async getKanbanBoard(kanbanApiKey) {
+    const stage = "getKanbanBoard";
+    try {
+      const board = await this.#fetchKanban(kanbanApiKey, "/board");
+      console.log(`[INFO][${stage}] Board fetched: ${board.name}, columns=${board.columns.length}`);
+      return { columns: board.columns, name: board.name };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Creates a new task in the specified KanbanFlow column.
+   * @param {string} kanbanApiKey
+   * @param {string} taskName
+   * @param {string} [columnId] - Pre-resolved KanbanFlow column unique ID
+   * @param {string} [description]
+   * @returns {Promise<{success: boolean, taskId: string, taskName: string}>}
+   */
+  async createKanbanTask(kanbanApiKey, taskName, columnId, description) {
+    const stage = "createKanbanTask";
+    try {
+      const body = { name: taskName };
+      if (columnId?.trim()) body.columnId = columnId.trim();
+      if (description?.trim()) body.description = description.trim();
+
+      const res = await fetch("https://kanbanflow.com/api/v1/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${kanbanApiKey}` },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) throw new Error(`KanbanFlow create task error: ${res.status} ${res.statusText}`);
+      const result = await res.json();
+
+      console.log(`[INFO][${stage}] Task created: ${taskName}${columnId ? ` in column ${columnId}` : ""}`);
+      return { success: true, taskId: result.taskId, taskName };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  #fetchAndFormatKanbanTasks(kanbanApiKey) {
+    return Promise.all([
+      this.#fetchKanban(kanbanApiKey, "/tasks"),
+      this.#fetchKanban(kanbanApiKey, "/board")
+    ]).then(([tasksData, board]) => {
+      const columnMap = {};
+      board.columns.forEach(c => { columnMap[c.uniqueId] = c.name; });
+
+      const tasksByColumn = {};
+      tasksData.forEach(group => {
+        const colName = group.columnName || columnMap[group.columnId] || "Unknown";
+        if (!tasksByColumn[colName]) tasksByColumn[colName] = [];
+        (group.tasks || []).forEach(task => {
+          const subtasks = task.subTasks?.length
+            ? `\n  Subtasks: ${task.subTasks.map(s => `${s.name}${s.finished ? ' ✓' : ''}`).join(', ')}`
+            : '';
+          const color = task.color ? ` [${task.color}]` : '';
+          tasksByColumn[colName].push(`- ${task.name}${color}${subtasks}`);
+        });
+      });
+
+      return Object.entries(tasksByColumn)
+        .map(([col, tasks]) => `### ${col}\n${tasks.join('\n')}`)
+        .join('\n\n');
+    });
+  }
+
+  /**
+   * Returns raw KanbanFlow tasks grouped by column, formatted as markdown.
+   * @param {string} kanbanApiKey
+   * @returns {Promise<{tasks: string}>}
+   */
+  async getKanbanTasks(kanbanApiKey) {
+    const stage = "getKanbanTasks";
+    try {
+      const tasks = await this.#fetchAndFormatKanbanTasks(kanbanApiKey);
+      console.log(`[INFO][${stage}] Tasks formatted`);
+      return { tasks: tasks || "No tasks found." };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Fetches all tasks from KanbanFlow, groups by column, and sends to AI
+   * for a brief rundown and advice on what to start working on.
+   * @param {string} kanbanApiKey
+   * @param {string} [customPrompt]
+   * @returns {Promise<{response: string}>}
+   */
+  async generateKanbanRundown(kanbanApiKey, customPrompt) {
+    const stage = "generateKanbanRundown";
+    try {
+      const taskReport = await this.#fetchAndFormatKanbanTasks(kanbanApiKey);
+
+      if (!taskReport.trim()) {
+        return { response: "No tasks found on your KanbanFlow board." };
+      }
+
+      const defaultPrompt = `Here are my current KanbanFlow board tasks:\n\n${taskReport}\n\nPlease provide:\n1. A brief rundown of what I'm working on\n2. Advice on what task I should start working on first and why`;
+
+      const prompt = customPrompt?.trim()
+        ? `${customPrompt.trim()}\n\nTasks:\n${taskReport}`
+        : defaultPrompt;
+
+      const response = await this.#runAI(
+        "You are a productive task manager. Be concise and direct.",
+        prompt
+      );
+
+      console.log(`[INFO][${stage}] Rundown generated`);
+      return { response };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Suggests a category and topic for a kanban task using AI, checking existing categories first.
+   * @param {string} kanbanApiKey
+   * @param {string} taskName
+   * @param {string} [columnName]
+   * @returns {Promise<{category: string, topic: string}>}
+   */
+  async suggestKanbanCategory(kanbanApiKey, taskName, columnName) {
+    const stage = "suggestKanbanCategory";
+    try {
+      const existing = [...this.#db.exec("SELECT name FROM categories ORDER BY name").toArray()];
+      const existingCategories = existing.map(c => c.name);
+
+      const prompt = [
+        "Suggest a category and topic for a KanbanFlow task.",
+        `Task: "${taskName}"`,
+        columnName ? `Column: "${columnName}"` : null,
+        existingCategories.length ? `Existing categories: ${existingCategories.join(", ")}` : "No existing categories yet.",
+        "If an existing category fits, use it. Otherwise create a concise new one.",
+        "Respond with EXACTLY: CATEGORY: <name>\nTOPIC: <topic>"
+      ].filter(Boolean).join("\n");
+
+      const response = await this.#runAI(
+        "You organize tasks into categories. Reply only with the requested format.",
+        prompt
+      );
+
+      let category = "";
+      let topic = "";
+      for (const line of response.split("\n")) {
+        if (line.startsWith("CATEGORY:")) category = line.slice(9).trim();
+        if (line.startsWith("TOPIC:")) topic = line.slice(6).trim();
+      }
+      if (!category) category = columnName || "Kanban";
+      if (!topic) topic = taskName.slice(0, 60);
+
+      return { category, topic };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      return { category: columnName || "Kanban", topic: taskName.slice(0, 60) };
+    }
+  }
+
+  /**
+   * Suggests a category and topic for a chat message using AI, checking existing pairs first.
+   * @param {string} message
+   * @returns {Promise<{category: string, topic: string}>}
+   */
+  async suggestCategory(message) {
+    const stage = "suggestCategory";
+    try {
+      const existing = [...this.#db.exec(`SELECT DISTINCT c.name as category, t.name as topic FROM categories c JOIN topics t ON t.category_id = c.id ORDER BY c.name`).toArray()];
+      const existingPairs = existing.map(r => `${r.category}/${r.topic}`);
+
+      const prompt = [
+        "Suggest a category and topic for this message.",
+        `Message: "${message}"`,
+        existingPairs.length ? `Existing options: ${existingPairs.join(", ")}` : "No existing pairs yet.",
+        "If an existing pair fits, use it. Otherwise create a concise new category and topic.",
+        "Respond with EXACTLY: CATEGORY: <name>\nTOPIC: <topic>"
+      ].filter(Boolean).join("\n");
+
+      const response = await this.#runAI(
+        "You categorize messages. Reply only with the requested format.",
+        prompt
+      );
+
+      let category = "";
+      let topic = "";
+      for (const line of response.split("\n")) {
+        if (line.startsWith("CATEGORY:")) category = line.slice(9).trim();
+        if (line.startsWith("TOPIC:")) topic = line.slice(6).trim();
+      }
+      if (!category) category = "General";
+      if (!topic) topic = message.slice(0, 60);
+
+      return { category, topic };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      return { category: "General", topic: message.slice(0, 60) };
+    }
+  }
+
+  /**
+   * Stores messages as a new conversation in the given category/topic without calling AI.
+   * Creates the category and topic if they don't exist.
+   * @param {string} category
+   * @param {string} topic
+   * @param {Array<{role: string, content: string}>} messages
+   * @returns {{conversationId: number}}
+   */
+  async storeConversationMessage(category, topic, messages) {
+    const stage = "storeConversationMessage";
+    try {
+      const categoryRow = this.#db.exec(
+        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
+        category.trim()
+      ).one();
+
+      const topicRow = this.#db.exec(
+        `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id`,
+        categoryRow.id, topic.trim()
+      ).one();
+
+      const conv = this.#db.exec(
+        `INSERT INTO conversations (topic_id, messages) VALUES (?, ?) RETURNING id`,
+        topicRow.id, JSON.stringify(messages)
+      ).one();
+
+      console.log(`[INFO][${stage}] Stored ${messages.length} messages in ${category}/${topic}, conversation=${conv.id}`);
+      return { conversationId: conv.id };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
 }
 
 /**
@@ -545,8 +941,23 @@ export default {
     try {
       const id = env.ASSISTANT_DO.idFromName("singleton");
       const stub = env.ASSISTANT_DO.get(id);
-      await stub.updateAllSummaries();
-      console.log(`[INFO][${stage}] Scheduled summary update complete`);
+
+      if (event.cron === "0 11 * * *") {
+        const kanbanApiKey = env.KANBANFLOW_API_KEY;
+        if (kanbanApiKey) {
+          const result = await stub.generateKanbanRundown(kanbanApiKey);
+          const today = new Date().toISOString().split("T")[0];
+          await stub.storeConversationMessage("Kanban", today, [
+            { role: "assistant", content: result.response }
+          ]);
+          console.log(`[INFO][${stage}] Scheduled kanban rundown stored in Kanban/${today}`);
+        } else {
+          console.log(`[INFO][${stage}] Skipping kanban rundown: KANBANFLOW_API_KEY not set`);
+        }
+      } else {
+        await stub.updateAllSummaries();
+        console.log(`[INFO][${stage}] Scheduled summary update complete`);
+      }
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -572,17 +983,22 @@ export default {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
 
+      if (request.method === "GET" && url.pathname === "/context-sources") {
+        return Response.json(listContextSources());
+      }
+
       if (request.method === "POST" && url.pathname === "/chat") {
         let body;
         try { body = await request.json(); } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
-        const { category, topic, message } = body ?? {};
+        const { category, topic, message, contextSources: rawContextSources } = body ?? {};
+        const contextSources = Array.isArray(rawContextSources) ? rawContextSources : [];
         if (!category?.trim() || !topic?.trim() || !message?.trim())
           return Response.json({ error: "category, topic, and message are required" }, { status: 400 });
 
-        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}`);
-        const result = await stub.chat(category, topic, message);
+        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextSources=${JSON.stringify(contextSources)}`);
+        const result = await stub.chat(category, topic, message, contextSources);
         return Response.json(result);
       }
 
@@ -590,6 +1006,34 @@ export default {
         console.log(`[INFO][${stage}] Fetching categories`);
         const categories = await stub.getCategories();
         return Response.json(categories);
+      }
+
+      if (request.method === "GET" && url.pathname === "/conversations") {
+        console.log(`[INFO][${stage}] Listing conversations`);
+        const result = await stub.listConversations();
+        return Response.json(result);
+      }
+
+      if (request.method === "GET" && url.pathname === "/conversation") {
+        const id = url.searchParams.get("id");
+        if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
+        const convId = Number(id);
+        if (!Number.isInteger(convId) || convId <= 0)
+          return Response.json({ error: "id must be a positive integer" }, { status: 400 });
+        console.log(`[INFO][${stage}] Fetching conversation: id=${convId}`);
+        const result = await stub.getConversation(convId);
+        return Response.json(result);
+      }
+
+      if (request.method === "DELETE" && url.pathname === "/conversation") {
+        const id = url.searchParams.get("id");
+        if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
+        const convId = Number(id);
+        if (!Number.isInteger(convId) || convId <= 0)
+          return Response.json({ error: "id must be a positive integer" }, { status: 400 });
+        console.log(`[INFO][${stage}] Deleting conversation: id=${convId}`);
+        const result = await stub.deleteConversation(convId);
+        return Response.json(result);
       }
 
       if (request.method === "POST" && url.pathname === "/update-summaries") {
@@ -625,6 +1069,88 @@ export default {
         console.log(`[INFO][${stage}] Query category: category=${category}`);
         const result = await stub.queryCategoryByName(category, prompt);
         return Response.json({ category, prompt, response: result.response });
+      }
+
+      if (request.method === "POST" && url.pathname === "/suggest-category") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        if (!body?.message?.trim())
+          return Response.json({ error: "message is required" }, { status: 400 });
+
+        const result = await stub.suggestCategory(body.message.trim());
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/kanban-board") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required. Set KANBANFLOW_API_KEY secret or pass it in the request body." }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Fetching kanban board`);
+        const result = await stub.getKanbanBoard(kanbanApiKey);
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/kanban-suggest-category") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required." }, { status: 400 });
+        if (!body?.taskName?.trim())
+          return Response.json({ error: "taskName is required" }, { status: 400 });
+
+        const result = await stub.suggestKanbanCategory(kanbanApiKey, body.taskName.trim(), body?.columnName?.trim());
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/kanban-create-task") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required." }, { status: 400 });
+        if (!body?.taskName?.trim() || !body?.columnName?.trim())
+          return Response.json({ error: "taskName and columnName are required" }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Creating kanban task: ${body.taskName} in ${body.columnName}`);
+        const board = await stub.getKanbanBoard(kanbanApiKey);
+        const column = board.columns.find(c => c.name === body.columnName.trim());
+        if (!column) return Response.json({ error: `Column not found: ${body.columnName}` }, { status: 400 });
+        const taskResult = await stub.createKanbanTask(kanbanApiKey, body.taskName.trim(), column.uniqueId);
+
+        if (taskResult.success && body?.category?.trim() && body?.topic?.trim()) {
+          try {
+            await stub.storeConversationMessage(body.category.trim(), body.topic.trim(), [
+              { role: "user", content: `Created kanban task "${body.taskName}" in ${body.columnName}` },
+              { role: "assistant", content: `✅ Task created: "${body.taskName}" in ${body.columnName}` }
+            ]);
+          } catch (err) {
+            console.error(`[ERROR][${stage}] Failed to store conversation: ${err.message}`);
+          }
+        }
+
+        return Response.json({ ...taskResult, columnName: body.columnName.trim() });
+      }
+
+      if (request.method === "POST" && url.pathname === "/kanban-rundown") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        const kanbanApiKey = body?.kanbanApiKey || env.KANBANFLOW_API_KEY;
+        if (!kanbanApiKey) return Response.json({ error: "KanbanFlow API key is required." }, { status: 400 });
+
+        console.log(`[INFO][${stage}] Generating kanban rundown`);
+        const result = await stub.generateKanbanRundown(kanbanApiKey, body?.customPrompt);
+        return Response.json(result);
       }
 
       return Response.json({ error: "Not found" }, { status: 404 });

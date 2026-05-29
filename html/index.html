@@ -83,25 +83,121 @@
         position: fixed;
         left: 0;
         top: 0;
-        width: 200px;
+        width: 280px;
         height: 100%;
         background: var(--input-bg);
         border-right: 1px solid var(--border);
-        padding: 10px;
-        overflow-y: auto;
-        text-align: center;
+        display: flex;
+        flex-direction: column;
+        z-index: 10;
       }
-      #main { margin-left: 210px; max-width: 900px; }
-      .conv-item {
-        padding: 8px;
-        cursor: pointer;
+      #main { margin-left: 290px; max-width: 900px; }
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .sidebar-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
+      .sidebar-actions { display: flex; gap: 6px; }
+      .sidebar-actions button {
+        width: 32px; height: 32px; padding: 0;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 6px;
         border: 1px solid var(--border);
-        margin: 4px 0;
-        border-radius: 4px;
-        text-align: center;
+        background: var(--input-bg);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .sidebar-actions button:hover { background: var(--code-bg); }
+      #sidebarSearch {
+        margin: 8px 12px; padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        font-size: 13px;
+        width: auto;
+      }
+      #sidebarSearch::placeholder { color: var(--blockquote); }
+      #conversations {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 8px;
+      }
+      .conv-item {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        cursor: pointer;
+        border-radius: 8px;
+        margin: 2px 0;
+        text-align: left;
+        border: none;
+        background: transparent;
+        color: var(--text);
+        transition: background 0.15s;
       }
       .conv-item:hover { background: var(--code-bg); }
       .conv-item.active { background: var(--user); color: #fff; }
+      .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
+      .conv-title {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .conv-preview {
+        font-size: 12px;
+        opacity: 0.7;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .conv-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 4px;
+      }
+      .conv-time { font-size: 11px; opacity: 0.5; }
+      .conv-delete {
+        opacity: 0;
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .conv-item:hover .conv-delete { opacity: 0.5; }
+      .conv-delete:hover { opacity: 1 !important; background: rgba(255,0,0,0.15); }
+      .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
+      .update-btn {
+        margin: 8px 12px;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--input-bg);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        flex-shrink: 0;
+        width: calc(100% - 24px);
+        white-space: nowrap;
+      }
+      .update-btn:hover { background: var(--code-bg); }
+      #contextSources { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0; }
+      #contextSources label { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; user-select: none; }
+      #contextSources input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
       .tabs { display: flex; gap: 10px; margin-bottom: 10px; }
       .tab { padding: 10px 20px; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); }
       .tab.active { background: var(--user); color: #fff; }
@@ -146,18 +242,25 @@
   </head>
   <body>
     <div id="sidebar">
-      <h3>Conversations</h3>
-      <button onclick="newConversation()">Start conversation</button>
-      <button onclick="updateSummaries()">Update Summaries</button>
+      <div class="sidebar-header">
+        <h3>Conversations</h3>
+        <div class="sidebar-actions">
+          <button onclick="newConversation()" title="New conversation">+</button>
+        </div>
+      </div>
+      <input id="sidebarSearch" type="text" placeholder="Search conversations..." oninput="renderConversations()" />
       <div id="conversations"></div>
+      <button class="update-btn" onclick="updateSummaries()"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:middle;margin-right:4px"><path d="M2 7a5 5 0 0110 0M12 2v4.5H7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Update Summaries</button>
     </div>
     <div id="main">
     <h1>Personal Assistant</h1>
     <input id="apiKey" type="password" placeholder="API Key" />
+    <input id="kanbanApiKey" type="password" placeholder="KanbanFlow API Key (optional, for manual override)" />
     <div class="tabs">
       <button class="tab active" onclick="switchTab('chat')">Chat</button>
       <button class="tab" onclick="switchTab('query')">Query</button>
       <button class="tab" onclick="switchTab('explore')">Explore</button>
+      <button class="tab" onclick="switchTab('kanban')">Kanban</button>
     </div>
     <div id="tab-chat" class="tab-content active">
       <input id="category" list="categoryList" placeholder="Category (or type new)" />
@@ -165,7 +268,8 @@
       <input id="topic" list="topicList" placeholder="Topic (or type new)" />
       <datalist id="topicList"></datalist>
       <textarea id="message" placeholder="Message"></textarea>
-      <button onclick="send()">Send</button>
+      <div id="contextSources"></div>
+      <button id="sendBtn" onclick="send()">Send</button>
       <div id="messages"></div>
     </div>
     <div id="tab-query" class="tab-content">
@@ -193,6 +297,23 @@
     <div id="tab-explore" class="tab-content">
       <div id="exploreList"></div>
     </div>
+    <div id="tab-kanban" class="tab-content">
+      <fieldset>
+          <legend>Add Task</legend>
+          <select id="kanbanColumn"><option value="">Select column</option></select>
+          <input id="kanbanTaskName" placeholder="Task name" />
+          <input id="kanbanCategory" placeholder="Category (leave empty to auto-generate)" />
+          <input id="kanbanTopic" placeholder="Topic (leave empty to auto-generate)" />
+          <button id="kanbanAddBtn" onclick="createKanbanTask()">Add Task</button>
+          <div id="kanbanCreateResult"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Rundown</legend>
+        <textarea id="kanbanPrompt" placeholder="Custom prompt (optional — defaults to asking for a rundown and starting advice)">What's on my plate today and what should I prioritize?</textarea>
+        <button onclick="generateKanbanRundown()">Generate Kanban Rundown</button>
+        <div id="kanbanResults"></div>
+      </fieldset>
+    </div>
     </div>
     <script>
       const base = location.origin
@@ -210,97 +331,195 @@
         loadCategories()
       })
 
-      let conversations = JSON.parse(localStorage.getItem("conversations") || "[]")
+      const kanbanApiKey = document.getElementById("kanbanApiKey")
+      const savedKanbanKey = localStorage.getItem("kanbanApiKey")
+      if (savedKanbanKey) kanbanApiKey.value = savedKanbanKey
+
+      kanbanApiKey.addEventListener("change", () => {
+        localStorage.setItem("kanbanApiKey", kanbanApiKey.value)
+        loadKanbanColumns()
+      })
+
+      const kanbanPrompt = document.getElementById("kanbanPrompt")
+      const savedKanbanPrompt = localStorage.getItem("kanbanPrompt")
+      if (savedKanbanPrompt) kanbanPrompt.value = savedKanbanPrompt
+
+      kanbanPrompt.addEventListener("change", () => {
+        localStorage.setItem("kanbanPrompt", kanbanPrompt.value)
+      })
+
+      document.getElementById("kanbanCategory").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
+      document.getElementById("kanbanTopic").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
+
+      let conversations = []
       let currentConvId = null
+      let currentMessages = []
 
-      function saveConversations() {
-        localStorage.setItem("conversations", JSON.stringify(conversations))
-        renderConversations()
-      }
-
+      /** Renders the sidebar conversation list, filtered by the search input. */
       function renderConversations() {
         const container = document.getElementById("conversations")
-        container.innerHTML = conversations
-          .map(
-            (c) => {
-              const label = [c.category, c.topic].filter(Boolean).join(" / ");
-              return `<div class="conv-item ${c.id === currentConvId ? "active" : ""}" onclick="loadConversation(${c.id})">${label || "New"}</div>`;
-            },
-          )
+        const search = (document.getElementById("sidebarSearch")?.value || "").toLowerCase()
+        const filtered = conversations.filter(c => {
+          if (!search) return true
+          return (c.category + " " + c.topic + " " + (c.last_message || "")).toLowerCase().includes(search)
+        })
+        container.innerHTML = filtered
+          .map(c => {
+            const label = [c.category, c.topic].filter(Boolean).join(" / ")
+            const preview = c.last_message || ""
+            const time = c.created_at ? relativeTime(c.created_at) : ""
+            const isActive = c.id === currentConvId
+            return `<div class="conv-item ${isActive ? "active" : ""}" onclick="loadConversation(${c.id})">
+              <div class="conv-title">${escapeHtml(label) || "New conversation"}</div>
+              ${preview ? `<div class="conv-preview">${escapeHtml(preview)}${preview.length >= 80 ? "…" : ""}</div>` : ""}
+              <div class="conv-meta">
+                <span class="conv-time">${time}</span>
+                <button class="conv-delete" aria-label="Delete conversation" title="Delete conversation" onclick="event.stopPropagation();deleteConversation(${c.id})"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+              </div>
+            </div>`
+          })
           .join("")
+        if (!filtered.length) {
+          container.innerHTML = '<div style="text-align:center;padding:20px;opacity:0.5;font-size:13px">No conversations</div>'
+        }
       }
 
+      /**
+       * Converts a unix timestamp to a relative time string (e.g. "5m ago").
+       * @param {number} timestamp - Unix timestamp in seconds
+       * @returns {string}
+       */
+      function relativeTime(timestamp) {
+        const now = Math.floor(Date.now() / 1000)
+        const diff = now - timestamp
+        if (diff < 60) return "just now"
+        if (diff < 3600) return Math.floor(diff / 60) + "m ago"
+        if (diff < 86400) return Math.floor(diff / 3600) + "h ago"
+        if (diff < 172800) return "yesterday"
+        if (diff < 604800) return Math.floor(diff / 86400) + "d ago"
+        return new Date(timestamp * 1000).toLocaleDateString()
+      }
+
+      /** Clears the current conversation and resets the UI to start a new one. */
       function newConversation() {
-        const conv = { id: Date.now(), category: "", topic: "", messages: [] }
-        conversations.unshift(conv)
-        currentConvId = conv.id
+        currentConvId = null
+        currentMessages = []
         category.value = ""
         topic.value = ""
         msgs.innerHTML = ""
-        saveConversations()
+        document.getElementById("sidebarSearch").value = ""
+        renderConversations()
       }
 
-      function loadConversation(id) {
+      /**
+       * Loads a conversation's messages from the server and displays them.
+       * @param {number} id - Conversation ID
+       */
+      async function loadConversation(id) {
         const conv = conversations.find((c) => c.id === id)
         if (!conv) return
         currentConvId = id
         category.value = conv.category || ""
         topic.value = conv.topic || ""
-        msgs.innerHTML = conv.messages
+        msgs.innerHTML = '<div class="msg">Loading...</div>'
+        const res = await req("GET", `/conversation?id=${id}`)
+        if (res.messages) {
+          currentMessages = res.messages.map(m => ({ role: m.role, text: m.content }))
+        } else {
+          currentMessages = []
+        }
+        msgs.innerHTML = currentMessages
           .map((m) => `<div class="msg ${m.role}"><b>${m.role}:</b> ${m.role === "assistant" ? parseMarkdown(m.text) : m.text}</div>`)
           .join("")
         msgs.scrollTop = msgs.scrollHeight
         renderConversations()
       }
 
+      /**
+       * Appends a message to the local messages display and the current conversation buffer.
+       * @param {"user"|"assistant"} role
+       * @param {string} text
+       */
       function addMsg(role, text) {
         const content = role === 'assistant' ? parseMarkdown(text) : text
         msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
         msgs.scrollTop = msgs.scrollHeight
-        const conv = conversations.find((c) => c.id === currentConvId)
-        if (conv) {
-          conv.messages.push({ role, text })
-          conv.category = category.value
-          conv.topic = topic.value
-          saveConversations()
+        currentMessages.push({ role, text })
+      }
+
+      /** Fetches the conversation list from the server and re-renders the sidebar. */
+      async function refreshConversations() {
+        const res = await req("GET", "/conversations")
+        if (Array.isArray(res)) {
+          conversations = res
+          renderConversations()
         }
       }
 
-      category.addEventListener("change", () => {
-        const conv = conversations.find((c) => c.id === currentConvId)
-        if (conv) {
-          conv.category = category.value
-          saveConversations()
-        }
-      })
-      topic.addEventListener("change", () => {
-        const conv = conversations.find((c) => c.id === currentConvId)
-        if (conv) {
-          conv.topic = topic.value
-          saveConversations()
-        }
-      })
+      /**
+       * Deletes a conversation after user confirmation.
+       * @param {number} id - Conversation ID
+       */
+      async function deleteConversation(id) {
+        if (!confirm("Delete this conversation?")) return
+        await req("DELETE", `/conversation?id=${id}`)
+        if (currentConvId === id) newConversation()
+        await refreshConversations()
+      }
 
-      if (conversations.length === 0) newConversation()
-      else loadConversation(conversations[0].id)
+      /** Fetches available context providers (kanban-rundown, etc.) and renders checkboxes. */
+      async function loadContextSources() {
+        const res = await req("GET", "/context-sources")
+        if (Array.isArray(res)) {
+          const container = document.getElementById("contextSources")
+          container.innerHTML = res.map(s => `<label><input type="checkbox" value="${escapeHtml(s.name)}" /> ${escapeHtml(s.name)}</label>`).join("")
+        }
+      }
+
+      newConversation()
+      refreshConversations()
       loadCategories()
+      loadContextSources()
+      if (kanbanApiKey.value) loadKanbanColumns()
 
+      /**
+       * Sends an authenticated API request to the backend.
+       * @param {"GET"|"POST"|"DELETE"} method
+       * @param {string} path
+       * @param {object} [body] - JSON body (for POST)
+       * @returns {Promise<any>}
+       */
       async function req(method, path, body) {
+        const headers = { Authorization: `Bearer ${apiKey.value}` }
+        if (body) headers["Content-Type"] = "application/json"
         const r = await fetch(base + path, {
           method,
-          headers: { Authorization: `Bearer ${apiKey.value}`, "Content-Type": "application/json" },
+          headers,
           body: body ? JSON.stringify(body) : undefined,
         })
         return r.json()
       }
 
+      /**
+       * Switches the active tab, pre-filling kanban fields from chat when first opened.
+       * @param {"chat"|"query"|"explore"|"kanban"} tab
+       */
       function switchTab(tab) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'))
         document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active')
         document.getElementById(`tab-${tab}`).classList.add('active')
+        if (tab === 'kanban') {
+          const catInput = document.getElementById("kanbanCategory")
+          const topicInput = document.getElementById("kanbanTopic")
+          if (!catInput.value && !topicInput.value) {
+            catInput.value = document.getElementById("category").value
+            topicInput.value = document.getElementById("topic").value
+          }
+        }
       }
 
+      /** Queries a specific topic by name with a custom prompt. */
       async function queryTopic() {
         const category = document.getElementById('qTopicCategory').value
         const topic = document.getElementById('qTopicName').value
@@ -311,6 +530,7 @@
         document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Topic: ${topic}</b><br>${parseMarkdown(res.response || res.error)}</div>`
       }
 
+      /** Queries all topics in a category with a custom prompt. */
       async function queryCategory() {
         const category = document.getElementById('qCategoryName').value
         const prompt = document.getElementById('qCategoryPrompt').value
@@ -320,10 +540,20 @@
         document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Category: ${category}</b><br>${parseMarkdown(res.response || res.error)}</div>`
       }
 
+      /**
+       * Escapes HTML special characters in a string.
+       * @param {string} text
+       * @returns {string}
+       */
       function escapeHtml(text) {
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       }
 
+      /**
+       * Converts basic markdown text to safe HTML.
+       * @param {string} text
+       * @returns {string}
+       */
       function parseMarkdown(text) {
         text = escapeHtml(text)
         text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
@@ -350,16 +580,41 @@
         el.nextElementSibling.classList.toggle('collapsed');
       }
 
+      /**
+       * Returns the names of all checked context source checkboxes.
+       * @returns {string[]}
+       */
+      function getSelectedContextSources() {
+        return [...document.querySelectorAll("#contextSources input:checked")].map(cb => cb.value)
+      }
+
+      /** Sends a chat message. Auto-generates category/topic if empty with a confirm step. */
       async function send() {
-        if (!apiKey.value || !category.value || !topic.value || !message.value) return alert("Fill all fields")
+        const btn = document.getElementById("sendBtn")
+        if (!apiKey.value || !message.value) return alert("Fill API key and message")
+        if (!category.value.trim() || !topic.value.trim()) {
+          btn.disabled = true
+          btn.textContent = "Generating..."
+          const suggest = await req("POST", "/suggest-category", { message: message.value })
+          btn.disabled = false
+          if (suggest.category) category.value = suggest.category
+          if (suggest.topic) topic.value = suggest.topic
+          btn.textContent = "Confirm Send"
+          return
+        }
+        btn.textContent = "Send"
         addMsg("user", message.value)
-        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value })
+        const contextSources = getSelectedContextSources()
+        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value, contextSources: contextSources.length ? contextSources : undefined })
         addMsg("assistant", res.response || res.error)
         message.value = ""
+        if (res.conversationId) currentConvId = res.conversationId
+        await refreshConversations()
       }
 
       let categoriesData = []
 
+      /** Renders the collapsible explore view from cached categories data. */
       function renderExplore() {
         const container = document.getElementById("exploreList")
         container.innerHTML = categoriesData
@@ -389,6 +644,7 @@
           `).join("")
       }
 
+      /** Fetches all categories and topics from the server and updates all related UI. */
       async function loadCategories() {
         const res = await req("GET", "/categories")
         categoriesData = res
@@ -414,11 +670,14 @@
       })
 
       category.addEventListener("input", function() {
+        document.getElementById("sendBtn").textContent = "Send"
         const cat = categoriesData.find(c => c.name === this.value)
         const topicList = document.getElementById("topicList")
         topicList.innerHTML = cat ? cat.topics.map(t => `<option value="${t.name}">`).join("") : categoriesData.flatMap(c => c.topics.map(t => `<option value="${t.name}">`)).join("")
       })
+      topic.addEventListener("input", () => { document.getElementById("sendBtn").textContent = "Send" })
 
+      /** Triggers a manual summary update on the server, then reloads categories. */
       async function updateSummaries() {
         switchTab('explore')
         document.getElementById('exploreList').innerHTML = 'Updating summaries...'
@@ -428,6 +687,64 @@
         } else {
           document.getElementById('exploreList').innerHTML = `Error: ${res.error}`
         }
+      }
+
+      let kanbanColumns = []
+
+      /** Fetches kanban board columns and populates the column selector. */
+      async function loadKanbanColumns() {
+        const select = document.getElementById("kanbanColumn")
+        select.innerHTML = '<option value="">Loading...</option>'
+        const res = await req("POST", "/kanban-board", { kanbanApiKey: kanbanApiKey.value })
+        if (res.columns) {
+          kanbanColumns = res.columns
+          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("")
+        } else {
+          select.innerHTML = '<option value="">Failed to load columns</option>'
+        }
+      }
+
+      /** Creates a kanban task. Auto-generates category/topic if empty with a confirm step. */
+      async function createKanbanTask() {
+        const column = document.getElementById("kanbanColumn").value
+        const taskName = document.getElementById("kanbanTaskName").value
+        const catInput = document.getElementById("kanbanCategory")
+        const topicInput = document.getElementById("kanbanTopic")
+        const btn = document.getElementById("kanbanAddBtn")
+        const result = document.getElementById("kanbanCreateResult")
+        if (!column || !taskName) return alert("Select a column and enter a task name")
+
+        const needSuggest = !catInput.value.trim() || !topicInput.value.trim()
+        if (needSuggest) {
+          result.innerHTML = "Generating category/topic..."
+          btn.disabled = true
+          const suggest = await req("POST", "/kanban-suggest-category", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column })
+          btn.disabled = false
+          if (suggest.category) catInput.value = suggest.category
+          if (suggest.topic) topicInput.value = suggest.topic
+          result.innerHTML = `<div class="msg" style="font-size:13px;opacity:0.8">Auto-filled: <b>${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</b> — review and click Add Task again to confirm.</div>`
+          btn.textContent = "Confirm Add Task"
+          return
+        }
+
+        btn.textContent = "Add Task"
+        result.innerHTML = "Creating..."
+        btn.disabled = true
+        const res = await req("POST", "/kanban-create-task", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column, category: catInput.value.trim(), topic: topicInput.value.trim() })
+        btn.disabled = false
+        if (res.success) {
+          result.innerHTML = `<div class="msg assistant">✅ Task "<b>${escapeHtml(res.taskName)}</b>" created in ${escapeHtml(res.columnName)}<br><span style="opacity:0.7;font-size:12px">Stored under ${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</span></div>`
+          document.getElementById("kanbanTaskName").value = ""
+        } else {
+          result.innerHTML = `<div class="msg" style="color:red">Error: ${res.error}</div>`
+        }
+      }
+
+      /** Generates an AI rundown of the kanban board with the current tasks. */
+      async function generateKanbanRundown() {
+        document.getElementById("kanbanResults").innerHTML = '<div class="msg">Generating rundown...</div>'
+        const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value, customPrompt: kanbanPrompt.value || undefined })
+        document.getElementById("kanbanResults").innerHTML = `<div class="msg assistant">${parseMarkdown(res.response || res.error)}</div>`
       }
     </script>
   </body>
