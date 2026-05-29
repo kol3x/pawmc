@@ -25,13 +25,13 @@ AI-generated summaries are maintained for both topics and categories, updated in
 - **State Management:** Durable Object singleton pattern
 - **Frontend:** Vanilla HTML/CSS/JS (single-page app)
 - **Task Integration:** KanbanFlow API
-- **Deployment:** Cloudflare Workers via `wrangler` v4.95.0
+- **Deployment:** Cloudflare Workers via `wrangler` v4.76.0
 
 ### Database Schema
 Three tables in SQLite:
 - `categories`: id, name (UNIQUE), summary, updated_at_timestamp
 - `topics`: id, category_id (FK), name, summary, updated_at_timestamp, UNIQUE(category_id, name)
-- `conversations`: id, topic_id (FK), messages, created_at_timestamp
+- `conversations`: id, topic_id (FK), messages, last_message, created_at_timestamp
 
 ## Features
 
@@ -41,7 +41,7 @@ Three tables in SQLite:
 3. **Daily Summaries**: Automatically updated via cron (0 0 * * *)
 4. **KanbanFlow Integration**: Task creation, board views, AI rundowns (0 11 * * *)
 5. **AI Features**: Chat, topic/query summarization, contextual responses
-6. **Web UI**: Single HTML file with Chat/Query/Explore/Kanban tabs
+6. **Web UI**: Single HTML file with Chat/Query/Explore/Kanban/Channels tabs
 7. **Context Injection System**: Pluggable providers for real-time data
 
 ### New Features: Social Channels (Implemented in feature/channels branch)
@@ -80,7 +80,7 @@ Users create or join channels where members share AI-drafted, human-approved sta
 ### Prerequisites
 - Node.js
 - Cloudflare account
-- wrangler v4.95.0+
+- wrangler v4.76.0
 
 ### Installation
 ```bash
@@ -121,7 +121,9 @@ Hub endpoints (`/hub/*`): `Authorization: Bearer <inviteCode|memberToken>`
 - `POST /channels/{id}/suggest-card` (AI draft)
 - `POST /channels/{id}/approve-card` (share approved card)
 - `POST /channels/{id}/map` (set category mapping)
-- `DELETE /channels/{id}/leave`
+- `POST /channels/{id}/reinvite` (rotate invite code for a hosted channel)
+- `DELETE /channels/{id}/leave` (leave a joined channel)
+- `DELETE /channels/{id}` (delete a hosted channel)
 
 ## Development
 
@@ -131,12 +133,11 @@ Hub endpoints (`/hub/*`): `Authorization: Bearer <inviteCode|memberToken>`
   index.js          - Worker + Durable Object (1704 lines)
   context.js        - Context injection system (providers)
 /html
-  index.html        - Web UI (Chat/Query/Explore/Kanban/Channels tabs)
-/favicon_io
-  favicon.ico           - Main browser favicon (robot emoji, Twitter Twemoji CC-BY 4.0)
-  favicon-16x16.png     - 16px PNG favicon
-  favicon-32x32.png     - 32px PNG favicon
-  apple-touch-icon.png  - iOS home screen icon (180x180)
+  index.html              - Web UI (Chat/Query/Explore/Kanban/Channels tabs)
+  favicon.ico             - Main browser favicon (robot emoji, Twitter Twemoji CC-BY 4.0)
+  favicon-16x16.png       - 16px PNG favicon
+  favicon-32x32.png       - 32px PNG favicon
+  apple-touch-icon.png    - iOS home screen icon (180x180)
 wrangler.jsonc      - Wrangler configuration
 package.json        - Dependencies (wrangler only)
 ```
