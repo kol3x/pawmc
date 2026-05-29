@@ -1115,12 +1115,12 @@ export class AssistantDurableObject extends DurableObject {
         throw new Error(err.error || "Failed to join channel");
       }
       const data = await response.json();
-      this.#db.exec(
-        `INSERT INTO channel_memberships (channel_id, hub_url, member_token, display_name) VALUES (?, ?, ?, ?)`,
+      const membership = this.#db.exec(
+        `INSERT INTO channel_memberships (channel_id, hub_url, member_token, display_name) VALUES (?, ?, ?, ?) RETURNING id`,
         String(data.channelId), hubUrl.replace(/\/+$/, ""), data.memberToken, displayName
-      );
+      ).one();
       console.log(`[INFO][${stage}] Joined channel: id=${data.channelId}, hub=${hubUrl}`);
-      return { channelId: data.channelId };
+      return { channelId: data.channelId, membershipId: membership.id };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -1147,6 +1147,7 @@ export class AssistantDurableObject extends DurableObject {
           m.membership_id
         ).toArray();
         return {
+          membershipId: m.membership_id,
           channelId: m.channel_id,
           hubUrl: m.hub_url,
           displayName: m.display_name,
@@ -1165,8 +1166,9 @@ export class AssistantDurableObject extends DurableObject {
   async getChannelView(channelId) {
     const stage = "getChannelView";
     try {
-      const channel = this.#db.exec(`SELECT id, name FROM channels WHERE id = ?`, parseInt(channelId)).one();
-      if (channel) {
+      if (!String(channelId).startsWith("m")) {
+        const channel = this.#db.exec(`SELECT id, name FROM channels WHERE id = ?`, parseInt(channelId)).one();
+        if (!channel) throw new Error("Channel not found");
         const cards = [...this.#db.exec(`
           SELECT cm.display_name, cc.content, cc.approved_at
           FROM channel_cards cc
@@ -1176,22 +1178,22 @@ export class AssistantDurableObject extends DurableObject {
         `, channel.id).toArray()];
         return { channelName: channel.name, members: cards, isHub: true };
       }
+      const membershipId = parseInt(String(channelId).slice(1));
       const membership = this.#db.exec(
-        `SELECT id, hub_url, member_token FROM channel_memberships WHERE channel_id = ?`,
-        String(channelId)
+        `SELECT id, hub_url, member_token, channel_id FROM channel_memberships WHERE id = ?`,
+        membershipId
       ).one();
       if (!membership) throw new Error("Channel not found");
-      const response = await fetch(`${membership.hub_url}/hub/channels/${channelId}/cards`, {
-        headers: { "Authorization": `Bearer ${membership.member_token}` }
+      const response = await fetch(`${membership.hub_url}/hub/channels/${membership.channel_id}/cards`, {
+        headers: { "Authorization": `****** }
       });
       if (!response.ok) throw new Error("Failed to fetch channel view");
       const cards = await response.json();
       const pending = this.#db.exec(
-        `SELECT draft, status, approved_content FROM pending_cards pc
-         JOIN channel_memberships cm ON cm.id = pc.membership_id
-         WHERE cm.channel_id = ? AND pc.status = 'pending'
-         ORDER BY pc.created_at DESC LIMIT 1`,
-        String(channelId)
+        `SELECT draft, status, approved_content FROM pending_cards
+         WHERE membership_id = ? AND status = 'pending'
+         ORDER BY created_at DESC LIMIT 1`,
+        membership.id
       ).toArray();
       return { members: cards, pendingCard: pending[0] || null, isHub: false };
     } catch (err) {
@@ -1203,16 +1205,18 @@ export class AssistantDurableObject extends DurableObject {
   async suggestCard(channelId) {
     const stage = "suggestCard";
     try {
-      const channel = this.#db.exec(`SELECT id FROM channels WHERE id = ?`, parseInt(channelId)).one();
       let categories = [];
       let membershipId = null;
-      if (channel) {
+      if (!String(channelId).startsWith("m")) {
+        const channel = this.#db.exec(`SELECT id FROM channels WHERE id = ?`, parseInt(channelId)).one();
+        if (!channel) throw new Error("Channel not found");
         const allCats = [...this.#db.exec(`SELECT name FROM categories`).toArray()];
         categories = allCats.map(c => c.name);
       } else {
+        membershipId = parseInt(String(channelId).slice(1));
         const membership = this.#db.exec(
-          `SELECT id, category_mapping FROM channel_memberships WHERE channel_id = ?`,
-          String(channelId)
+          `SELECT id, category_mapping FROM channel_memberships WHERE id = ?`,
+          membershipId
         ).one();
         if (!membership) throw new Error("Channel not found");
         categories = JSON.parse(membership.category_mapping || "[]");
@@ -1264,8 +1268,9 @@ export class AssistantDurableObject extends DurableObject {
   async approveCard(channelId, content) {
     const stage = "approveCard";
     try {
-      const channel = this.#db.exec(`SELECT id FROM channels WHERE id = ?`, parseInt(channelId)).one();
-      if (channel) {
+      if (!String(channelId).startsWith("m")) {
+        const channel = this.#db.exec(`SELECT id FROM channels WHERE id = ?`, parseInt(channelId)).one();
+        if (!channel) throw new Error("Channel not found");
         const member = this.#db.exec(
           `SELECT id FROM channel_members WHERE channel_id = ? AND worker_url = '__host__'`,
           channel.id
@@ -1278,9 +1283,10 @@ export class AssistantDurableObject extends DurableObject {
         );
         return { success: true };
       }
+      const membershipId = parseInt(String(channelId).slice(1));
       const membership = this.#db.exec(
-        `SELECT id, hub_url, member_token FROM channel_memberships WHERE channel_id = ?`,
-        String(channelId)
+        `SELECT id, hub_url, member_token, channel_id FROM channel_memberships WHERE id = ?`,
+        membershipId
       ).one();
       if (!membership) throw new Error("Channel membership not found");
       const existing = this.#db.exec(
@@ -1293,11 +1299,11 @@ export class AssistantDurableObject extends DurableObject {
           content, existing[0].id
         );
       }
-      const response = await fetch(`${membership.hub_url}/hub/channels/${channelId}/card`, {
+      const response = await fetch(`${membership.hub_url}/hub/channels/${membership.channel_id}/card`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${membership.member_token}`
+          "Authorization": `****** }
         },
         body: JSON.stringify({ content })
       });
@@ -1315,9 +1321,10 @@ export class AssistantDurableObject extends DurableObject {
   async mapChannel(channelId, categories) {
     const stage = "mapChannel";
     try {
+      const membershipId = parseInt(String(channelId).slice(1));
       const membership = this.#db.exec(
-        `SELECT id FROM channel_memberships WHERE channel_id = ?`,
-        String(channelId)
+        `SELECT id FROM channel_memberships WHERE id = ?`,
+        membershipId
       ).one();
       if (!membership) throw new Error("Channel membership not found");
       this.#db.exec(
@@ -1334,14 +1341,15 @@ export class AssistantDurableObject extends DurableObject {
   async leaveChannel(channelId) {
     const stage = "leaveChannel";
     try {
+      const membershipId = parseInt(String(channelId).slice(1));
       const membership = this.#db.exec(
-        `SELECT id, hub_url, member_token FROM channel_memberships WHERE channel_id = ?`,
-        String(channelId)
+        `SELECT id, hub_url, member_token, channel_id FROM channel_memberships WHERE id = ?`,
+        membershipId
       ).one();
       if (!membership) throw new Error("Channel membership not found");
-      await fetch(`${membership.hub_url}/hub/channels/${channelId}/member`, {
+      await fetch(`${membership.hub_url}/hub/channels/${membership.channel_id}/member`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${membership.member_token}` }
+        headers: { "Authorization": `****** }
       }).catch(() => {});
       this.#db.exec(`DELETE FROM pending_cards WHERE membership_id = ?`, membership.id);
       this.#db.exec(`DELETE FROM channel_memberships WHERE id = ?`, membership.id);
@@ -1363,6 +1371,10 @@ export class AssistantDurableObject extends DurableObject {
         for (const [key, val] of tokens) {
           if (val.channelId === channelId) await this.state.storage.delete(key);
         }
+      }
+      const invites = await this.state.storage.list({ prefix: "inviteCode:" });
+      for (const [key, val] of invites) {
+        if (val.channelId === channelId) await this.state.storage.delete(key);
       }
       this.#db.exec(`DELETE FROM channels WHERE id = ?`, channelId);
       console.log(`[INFO][${stage}] Channel deleted: id=${channelId}`);

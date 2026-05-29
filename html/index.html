@@ -766,7 +766,7 @@
           html += '<div class="ch-section-title">Joined Channels</div>'
           html += '<div class="channels-nav">'
           for (const ch of joined) {
-            html += `<button class="${currentChannelId === ch.channelId ? 'active' : ''}" onclick="showChannel('${ch.channelId}')">${escapeHtml(ch.displayName)} <span style="opacity:0.6;font-size:11px">→ ${ch.hubUrl.replace(/https?:\/\//,'').slice(0,20)}</span></button>`
+            html += `<button class="${currentChannelId === 'm' + ch.membershipId ? 'active' : ''}" onclick="showChannel('m${ch.membershipId}')">${escapeHtml(ch.displayName)} <span style="opacity:0.6;font-size:11px">→ ${escapeHtml(ch.hubUrl.replace(/https?:\/\//, '').slice(0, 20))}</span></button>`
           }
           html += '</div>'
         }
@@ -777,7 +777,6 @@
           html += `<div id="channelDetail"></div>`
         }
         container.innerHTML = html
-        if (currentChannelId) showChannel(currentChannelId)
       }
 
       async function showChannel(channelId) {
@@ -814,7 +813,7 @@
         for (const m of members) {
           html += `<div class="channel-card ${isHub && m.worker_url === '__host__' ? 'host' : ''}">`
           html += `<div class="member-name">${escapeHtml(m.display_name)}</div>`
-          html += m.content ? `<div class="card-content">${m.content}</div>` : '<div class="card-content" style="opacity:0.4">No status yet</div>'
+          html += m.content ? `<div class="card-content">${escapeHtml(m.content)}</div>` : '<div class="card-content" style="opacity:0.4">No status yet</div>'
           if (m.approved_at) html += `<div class="card-time">${relativeTime(m.approved_at)}</div>`
           html += '</div>'
         }
@@ -897,9 +896,9 @@
         const displayName = document.getElementById("chJoinName").value.trim()
         if (!hubUrl || !inviteCode || !displayName) return alert("Fill all fields")
         const res = await req("POST", "/channels/join", { hubUrl, inviteCode, displayName })
-        if (res.channelId) {
+        if (res.membershipId) {
           toggleJoinForm()
-          currentChannelId = String(res.channelId)
+          currentChannelId = 'm' + res.membershipId
           loadChannels()
         } else {
           alert(res.error || "Failed to join channel")
