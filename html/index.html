@@ -990,7 +990,7 @@
           btn.disabled = false
           if (suggest.category) catInput.value = suggest.category
           if (suggest.topic) topicInput.value = suggest.topic
-          result.innerHTML = `<div class="msg" style="font-size:13px;opacity:0.8">Auto-filled: <b>${catInput.value} / ${topicInput.value}</b> — review and click Add Task again to confirm.</div>`
+          result.innerHTML = `<div class="msg" style="font-size:13px;opacity:0.8">Auto-filled: <b>${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</b> — review and click Add Task again to confirm.</div>`
           btn.textContent = "Confirm Add Task"
           return
         }
@@ -1001,7 +1001,7 @@
         const res = await req("POST", "/kanban-create-task", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column, category: catInput.value.trim(), topic: topicInput.value.trim() })
         btn.disabled = false
         if (res.success) {
-          result.innerHTML = `<div class="msg assistant">✅ Task "<b>${res.taskName}</b>" created in ${res.columnName}<br><span style="opacity:0.7;font-size:12px">Stored under ${catInput.value} / ${topicInput.value}</span></div>`
+          result.innerHTML = `<div class="msg assistant">✅ Task "<b>${escapeHtml(res.taskName)}</b>" created in ${escapeHtml(res.columnName)}<br><span style="opacity:0.7;font-size:12px">Stored under ${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</span></div>`
           document.getElementById("kanbanTaskName").value = ""
         } else {
           result.innerHTML = `<div class="msg" style="color:red">Error: ${res.error}</div>`

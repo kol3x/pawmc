@@ -1185,7 +1185,7 @@ export class AssistantDurableObject extends DurableObject {
       ).one();
       if (!membership) throw new Error("Channel not found");
       const response = await fetch(`${membership.hub_url}/hub/channels/${membership.channel_id}/cards`, {
-        headers: { "Authorization": `****** }
+        headers: { "Authorization": `Bearer ${membership.member_token}` }
       });
       if (!response.ok) throw new Error("Failed to fetch channel view");
       const cards = await response.json();
@@ -1303,7 +1303,7 @@ export class AssistantDurableObject extends DurableObject {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `****** }
+          "Authorization": `Bearer ${membership.member_token}`
         },
         body: JSON.stringify({ content })
       });
@@ -1349,7 +1349,7 @@ export class AssistantDurableObject extends DurableObject {
       if (!membership) throw new Error("Channel membership not found");
       await fetch(`${membership.hub_url}/hub/channels/${membership.channel_id}/member`, {
         method: "DELETE",
-        headers: { "Authorization": `****** }
+        headers: { "Authorization": `Bearer ${membership.member_token}` }
       }).catch(() => {});
       this.#db.exec(`DELETE FROM pending_cards WHERE membership_id = ?`, membership.id);
       this.#db.exec(`DELETE FROM channel_memberships WHERE id = ?`, membership.id);
