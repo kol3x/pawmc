@@ -86,6 +86,7 @@ export class AssistantDurableObject extends DurableObject {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         topic_id INTEGER NOT NULL,
         messages TEXT NOT NULL DEFAULT '[]',
+        last_message TEXT NOT NULL DEFAULT '',
         created_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
         FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
       );
@@ -101,6 +102,11 @@ export class AssistantDurableObject extends DurableObject {
     const hasUpdatedAtTimestampTopics = topicColumns.some(col => col.name === 'updated_at_timestamp');
     if (!hasUpdatedAtTimestampTopics) {
       await this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
+    }
+
+    const convColumns = this.#db.exec(`PRAGMA table_info(conversations)`).toArray();
+    if (!convColumns.some(col => col.name === 'last_message')) {
+      await this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`);
     }
 
     await this.#db.exec(`
@@ -237,7 +243,18 @@ export class AssistantDurableObject extends DurableObject {
       if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
 
       const kanbanKey = this.env.KANBANFLOW_API_KEY;
+      const allowTaskCreation = kanbanKey && contextSources.includes("kanban-create");
       let modifiedMessage = assistantMessage;
+      let boardColumnsCache = null;
+      const getColumnId = async (colName) => {
+        if (!boardColumnsCache) {
+          const board = await this.#fetchKanban(kanbanKey, "/board");
+          boardColumnsCache = board.columns;
+        }
+        const column = boardColumnsCache.find(c => c.name === colName);
+        if (!column) throw new Error(`Column not found: ${colName}`);
+        return column.uniqueId;
+      };
 
       const blockRegex = /⧉ CREATE TASK\n([\s\S]*?)(?:⧉ END|\n\n|$)/g;
       let blockMatch;
@@ -250,9 +267,10 @@ export class AssistantDurableObject extends DurableObject {
         const taskName = nameMatch?.[1]?.trim();
         const columnName = colMatch?.[1]?.trim();
         const description = descMatch?.[1]?.trim();
-        if (kanbanKey && taskName) {
+        if (allowTaskCreation && taskName) {
           try {
-            await this.createKanbanTask(kanbanKey, taskName, columnName, description);
+            const columnId = columnName ? await getColumnId(columnName) : undefined;
+            await this.createKanbanTask(kanbanKey, taskName, columnId, description);
             modifiedMessage = modifiedMessage.replace(blockMatch[0], `✅ Task created: "${taskName}"${columnName ? ` in ${columnName}` : ""}`);
           } catch (err) {
             modifiedMessage = modifiedMessage.replace(blockMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
@@ -266,9 +284,10 @@ export class AssistantDurableObject extends DurableObject {
         if (modifiedMessage.includes(inlineMatch[0])) {
           const taskName = inlineMatch[1].trim();
           const columnName = inlineMatch[2].trim();
-          if (kanbanKey && taskName && columnName) {
+          if (allowTaskCreation && taskName && columnName) {
             try {
-              await this.createKanbanTask(kanbanKey, taskName, columnName);
+              const columnId = await getColumnId(columnName);
+              await this.createKanbanTask(kanbanKey, taskName, columnId);
               modifiedMessage = modifiedMessage.replace(inlineMatch[0], `✅ Task created: "${taskName}" in ${columnName}`);
             } catch (err) {
               modifiedMessage = modifiedMessage.replace(inlineMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
@@ -279,9 +298,10 @@ export class AssistantDurableObject extends DurableObject {
 
       messages.push({ role: "assistant", content: modifiedMessage });
 
+      const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200);
       this.#db.exec(
-        `UPDATE conversations SET messages = ? WHERE id = ?`,
-        JSON.stringify(messages), conversationId
+        `UPDATE conversations SET messages = ?, last_message = ? WHERE id = ?`,
+        JSON.stringify(messages), lastMsg, conversationId
       );
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`);
 
@@ -648,22 +668,17 @@ export class AssistantDurableObject extends DurableObject {
     const stage = "listConversations";
     try {
       const rows = [...this.#db.exec(`
-        SELECT c.id, c.created_at_timestamp, c.messages, cat.name as category, t.name as topic
+        SELECT c.id, c.created_at_timestamp, c.last_message, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
         ORDER BY c.created_at_timestamp DESC
         LIMIT 50
       `).toArray()];
-      const result = rows.map(r => {
-        let lastMessage = "";
-        try {
-          const msgs = JSON.parse(r.messages);
-          const last = msgs[msgs.length - 1];
-          if (last) lastMessage = (last.content || last.text || "").slice(0, 80);
-        } catch {}
-        return { id: r.id, category: r.category, topic: r.topic, created_at: r.created_at_timestamp, last_message: lastMessage };
-      });
+      const result = rows.map(r => ({
+        id: r.id, category: r.category, topic: r.topic, created_at: r.created_at_timestamp,
+        last_message: (r.last_message || "").slice(0, 80)
+      }));
       console.log(`[INFO][${stage}] Listed ${result.length} conversations`);
       return result;
     } catch (err) {
@@ -744,20 +759,15 @@ export class AssistantDurableObject extends DurableObject {
    * Creates a new task in the specified KanbanFlow column.
    * @param {string} kanbanApiKey
    * @param {string} taskName
-   * @param {string} [columnName]
+   * @param {string} [columnId] - Pre-resolved KanbanFlow column unique ID
    * @param {string} [description]
-   * @returns {Promise<{success: boolean, taskId: string, taskName: string, columnName: string}>}
+   * @returns {Promise<{success: boolean, taskId: string, taskName: string}>}
    */
-  async createKanbanTask(kanbanApiKey, taskName, columnName, description) {
+  async createKanbanTask(kanbanApiKey, taskName, columnId, description) {
     const stage = "createKanbanTask";
     try {
       const body = { name: taskName };
-      if (columnName?.trim()) {
-        const board = await this.#fetchKanban(kanbanApiKey, "/board");
-        const column = board.columns.find(c => c.name === columnName);
-        if (!column) throw new Error(`Column not found: ${columnName}`);
-        body.columnId = column.uniqueId;
-      }
+      if (columnId?.trim()) body.columnId = columnId.trim();
       if (description?.trim()) body.description = description.trim();
 
       const res = await fetch("https://kanbanflow.com/api/v1/tasks", {
@@ -769,8 +779,8 @@ export class AssistantDurableObject extends DurableObject {
       if (!res.ok) throw new Error(`KanbanFlow create task error: ${res.status} ${res.statusText}`);
       const result = await res.json();
 
-      console.log(`[INFO][${stage}] Task created: ${taskName}${columnName ? ` in ${columnName}` : ""}`);
-      return { success: true, taskId: result.taskId, taskName, columnName: columnName || "" };
+      console.log(`[INFO][${stage}] Task created: ${taskName}${columnId ? ` in column ${columnId}` : ""}`);
+      return { success: true, taskId: result.taskId, taskName };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -1485,7 +1495,8 @@ export default {
         try { body = await request.json(); } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
-        const { category, topic, message, contextSources } = body ?? {};
+        const { category, topic, message, contextSources: rawContextSources } = body ?? {};
+        const contextSources = Array.isArray(rawContextSources) ? rawContextSources : [];
         if (!category?.trim() || !topic?.trim() || !message?.trim())
           return Response.json({ error: "category, topic, and message are required" }, { status: 400 });
 
@@ -1509,16 +1520,22 @@ export default {
       if (request.method === "GET" && url.pathname === "/conversation") {
         const id = url.searchParams.get("id");
         if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
-        console.log(`[INFO][${stage}] Fetching conversation: id=${id}`);
-        const result = await stub.getConversation(parseInt(id));
+        const convId = Number(id);
+        if (!Number.isInteger(convId) || convId <= 0)
+          return Response.json({ error: "id must be a positive integer" }, { status: 400 });
+        console.log(`[INFO][${stage}] Fetching conversation: id=${convId}`);
+        const result = await stub.getConversation(convId);
         return Response.json(result);
       }
 
       if (request.method === "DELETE" && url.pathname === "/conversation") {
         const id = url.searchParams.get("id");
         if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
-        console.log(`[INFO][${stage}] Deleting conversation: id=${id}`);
-        const result = await stub.deleteConversation(parseInt(id));
+        const convId = Number(id);
+        if (!Number.isInteger(convId) || convId <= 0)
+          return Response.json({ error: "id must be a positive integer" }, { status: 400 });
+        console.log(`[INFO][${stage}] Deleting conversation: id=${convId}`);
+        const result = await stub.deleteConversation(convId);
         return Response.json(result);
       }
 
@@ -1607,7 +1624,10 @@ export default {
           return Response.json({ error: "taskName and columnName are required" }, { status: 400 });
 
         console.log(`[INFO][${stage}] Creating kanban task: ${body.taskName} in ${body.columnName}`);
-        const taskResult = await stub.createKanbanTask(kanbanApiKey, body.taskName.trim(), body.columnName.trim());
+        const board = await stub.getKanbanBoard(kanbanApiKey);
+        const column = board.columns.find(c => c.name === body.columnName.trim());
+        if (!column) return Response.json({ error: `Column not found: ${body.columnName}` }, { status: 400 });
+        const taskResult = await stub.createKanbanTask(kanbanApiKey, body.taskName.trim(), column.uniqueId);
 
         if (taskResult.success && body?.category?.trim() && body?.topic?.trim()) {
           try {
@@ -1620,7 +1640,7 @@ export default {
           }
         }
 
-        return Response.json(taskResult);
+        return Response.json({ ...taskResult, columnName: body.columnName.trim() });
       }
 
       if (request.method === "POST" && url.pathname === "/kanban-rundown") {
