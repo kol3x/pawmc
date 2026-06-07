@@ -20,7 +20,7 @@ AI-generated summaries are maintained for both topics and categories, updated in
 ### Stack
 - **Runtime:** Cloudflare Workers (ES modules)
 - **Language:** JavaScript (vanilla, no framework)
-- **AI/LLM:** Cloudflare Workers AI (`@cf/moonshotai/kimi-k2.5`)
+- **AI/LLM:** Cloudflare Workers AI (`@cf/moonshotai/kimi-k2.6`)
 - **Database:** SQLite via Durable Objects
 - **State Management:** Durable Object singleton pattern
 - **Frontend:** Vanilla HTML/CSS/JS (single-page app)
@@ -41,39 +41,8 @@ Three tables in SQLite:
 3. **Daily Summaries**: Automatically updated via cron (0 0 * * *)
 4. **KanbanFlow Integration**: Task creation, board views, AI rundowns (0 11 * * *)
 5. **AI Features**: Chat, topic/query summarization, contextual responses
-6. **Web UI**: Single HTML file with Chat/Query/Explore/Kanban/Channels tabs
+6. **Web UI**: Single HTML file with Chat/Query/Explore/Kanban tabs
 7. **Context Injection System**: Pluggable providers for real-time data
-
-### New Features: Social Channels (Implemented in feature/channels branch)
-Enables social interactions between multiple deployed instances:
-
-#### Core Concept
-Users create or join channels where members share AI-drafted, human-approved status cards about current focus areas.
-
-#### Privacy-First Design
-- **Category Mapping**: Users select which categories feed into each channel
-- **AI Drafting**: Prompt instructs AI to omit sensitive details
-- **Human Approval**: Manual review/edit before sharing
-- **No Raw Data Exposure**: Only approved 1-2 sentence cards are shared
-
-#### Technical Implementation
-- **New Tables**: 5 additional SQL tables for channels, members, cards, memberships, pending cards
-- **Token Security**: Invite codes and member tokens stored in DO private KV storage (not SQL)
-- **Auth Model**: 
-  - Client-facing: API_KEY Bearer token
-  - Hub-facing: InviteCode (one-time, 24h) or MemberToken (permanent, invisible)
-- **Endpoints**: 
-  - Client: `/channels/*` (create, join, suggest, approve, map, leave)
-  - Hub: `/hub/channels/*` (join, card push, get cards, remove member)
-- **UI**: New "Channels" tab with create/join flows, card approval, invite management
-
-#### Privacy Guarantees
-| Concern | Protection |
-|---------|------------|
-| Token leakage | Never in browser/SQL - only in DO private KV |
-| Invite reuse | One-time use + 24h expiry |
-| Data exposure | AI omits specifics + human approval required |
-| Revocation | Leave → hub deletes token + card |
 
 ## Setup & Deployment
 
@@ -107,33 +76,21 @@ npx wrangler deploy
 ## API Reference
 
 ### Authentication
-Client endpoints: `Authorization: Bearer <API_KEY>`  
-Hub endpoints (`/hub/*`): `Authorization: Bearer <inviteCode|memberToken>`
+All endpoints: `Authorization: Bearer <API_KEY>`
 
 ### Key Endpoints
 **Conversations**: `GET /conversations`, `POST /chat`, `GET /categories`  
-**Kanban**: `POST /kanban-board`, `POST /kanban-create-task`, `POST /kanban-rundown`  
-**Channels**: 
-- `POST /channels/create` (name, displayName)
-- `POST /channels/join` (hubUrl, inviteCode, displayName)
-- `GET /channels` (list hosted + joined)
-- `GET /channels/{id}` (view cards + pending)
-- `POST /channels/{id}/suggest-card` (AI draft)
-- `POST /channels/{id}/approve-card` (share approved card)
-- `POST /channels/{id}/map` (set category mapping)
-- `POST /channels/{id}/reinvite` (rotate invite code for a hosted channel)
-- `DELETE /channels/{id}/leave` (leave a joined channel)
-- `DELETE /channels/{id}` (delete a hosted channel)
+**Kanban**: `POST /kanban-board`, `POST /kanban-create-task`, `POST /kanban-rundown`
 
 ## Development
 
 ### Code Organization
 ```
 /src
-  index.js          - Worker + Durable Object (1704 lines)
+  index.js          - Worker + Durable Object (1162 lines)
   context.js        - Context injection system (providers)
 /html
-  index.html              - Web UI (Chat/Query/Explore/Kanban/Channels tabs)
+  index.html              - Web UI (Chat/Query/Explore/Kanban tabs)
   favicon.ico             - Main browser favicon (robot emoji, Twitter Twemoji CC-BY 4.0)
   favicon-16x16.png       - 16px PNG favicon
   favicon-32x32.png       - 32px PNG favicon
@@ -150,10 +107,3 @@ define("provider-name", async (env, doInstance) => {
 });
 ```
 
-## Future Roadmap
-- Edit/delete pending card drafts
-- Channel roles/permissions (admin/member)
-- Channel search/discovery
-- End-to-end encryption for sensitive data
-- Custom AI models per channel
-- Channel analytics/insights
