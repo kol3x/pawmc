@@ -242,24 +242,6 @@
       .topic-header { font-size: 0.9em; padding: 8px; background: transparent; }
       .topic-header:hover { background: var(--code-bg); }
       .cat-item { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden; }
-
-      /* Channels Tab */
-      .channel-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 8px 0; }
-      .channel-card.host { border-color: var(--user); }
-      .channel-card .member-name { font-weight: 600; font-size: 14px; }
-      .channel-card .card-content { margin: 6px 0; font-size: 13px; line-height: 1.4; }
-      .channel-card .card-time { font-size: 11px; opacity: 0.5; }
-      .channel-pending { border: 1px dashed var(--user); border-radius: 8px; padding: 12px; margin: 8px 0; }
-      .channel-pending .draft-text { font-style: italic; font-size: 13px; margin: 6px 0; }
-      .channel-actions { display: flex; gap: 6px; margin-top: 8px; }
-      .channel-actions button { flex: 1; padding: 6px; font-size: 12px; }
-      .channels-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-      .channels-nav button { flex: 1; min-width: 120px; padding: 10px; text-align: center; font-size: 13px; }
-      .channels-nav button.active { background: var(--user); color: #fff; border-color: var(--user); }
-      .ch-join-form { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; }
-      .ch-join-form h3 { margin: 0 0 4px; }
-      .ch-invite-box { background: var(--code-bg); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 13px; margin: 6px 0; word-break: break-all; }
-      .ch-section-title { font-weight: 600; font-size: 14px; margin: 12px 0 6px; }
     </style>
   </head>
   <body>
@@ -283,7 +265,6 @@
       <button class="tab" onclick="switchTab('query')">Query</button>
       <button class="tab" onclick="switchTab('explore')">Explore</button>
       <button class="tab" onclick="switchTab('kanban')">Kanban</button>
-      <button class="tab" onclick="switchTab('channels')">Channels</button>
     </div>
     <div id="tab-chat" class="tab-content active">
       <input id="category" list="categoryList" placeholder="Category (or type new)" />
@@ -336,28 +317,6 @@
         <button onclick="generateKanbanRundown()">Generate Kanban Rundown</button>
         <div id="kanbanResults"></div>
       </fieldset>
-    </div>
-    <div id="tab-channels" class="tab-content">
-      <div id="channelsView"></div>
-      <div id="channelsJoinForm" class="ch-join-form" style="display:none">
-        <h3>Join a Channel</h3>
-        <input id="chJoinUrl" placeholder="Hub URL (e.g. https://alice.workers.dev)" />
-        <input id="chJoinCode" placeholder="Invite code" />
-        <input id="chJoinName" placeholder="Your display name" />
-        <div style="display:flex;gap:6px">
-          <button onclick="joinChannel()" style="flex:1">Join</button>
-          <button onclick="toggleJoinForm()" style="flex:1">Cancel</button>
-        </div>
-      </div>
-      <div id="channelsCreateForm" class="ch-join-form" style="display:none">
-        <h3>Create a Channel</h3>
-        <input id="chCreateName" placeholder="Channel name (e.g. Work Team)" />
-        <input id="chCreateDisplayName" placeholder="Your display name" />
-        <div style="display:flex;gap:6px">
-          <button onclick="createChannel()" style="flex:1">Create</button>
-          <button onclick="toggleCreateForm()" style="flex:1">Cancel</button>
-        </div>
-      </div>
     </div>
     </div>
     <script>
@@ -562,9 +521,6 @@
             topicInput.value = document.getElementById("topic").value
           }
         }
-        if (tab === 'channels') {
-          loadChannels()
-        }
       }
 
       /** Queries a specific topic by name with a custom prompt. */
@@ -735,230 +691,6 @@
         } else {
           document.getElementById('exploreList').innerHTML = `Error: ${res.error}`
         }
-      }
-
-      // ─── Channels ───
-
-      let channelsCache = null
-      let currentChannelId = null
-
-      async function loadChannels() {
-        const container = document.getElementById("channelsView")
-        container.innerHTML = '<div class="msg">Loading channels...</div>'
-        const res = await req("GET", "/channels")
-        channelsCache = res
-        renderChannels()
-      }
-
-      function renderChannels() {
-        const container = document.getElementById("channelsView")
-        if (!channelsCache) { container.innerHTML = ""; return }
-        const { hosted, joined } = channelsCache
-        let html = '<div style="display:flex;gap:8px;margin-bottom:12px">'
-        html += '<button onclick="toggleCreateForm()" style="flex:1;padding:10px">+ Create Channel</button>'
-        html += '<button onclick="toggleJoinForm()" style="flex:1;padding:10px">+ Join Channel</button>'
-        html += '</div>'
-        if (hosted.length) {
-          html += '<div class="ch-section-title">My Channels</div>'
-          html += '<div class="channels-nav">'
-          for (const ch of hosted) {
-            html += `<button class="${currentChannelId === String(ch.id) ? 'active' : ''}" onclick="showChannel('${ch.id}')">${escapeHtml(ch.name)} <span style="opacity:0.6;font-size:11px">(${ch.member_count})</span></button>`
-          }
-          html += '</div>'
-        }
-        if (joined.length) {
-          html += '<div class="ch-section-title">Joined Channels</div>'
-          html += '<div class="channels-nav">'
-          for (const ch of joined) {
-            html += `<button class="${currentChannelId === 'm' + ch.membershipId ? 'active' : ''}" onclick="showChannel('m${ch.membershipId}')">${escapeHtml(ch.displayName)} <span style="opacity:0.6;font-size:11px">→ ${escapeHtml(ch.hubUrl.replace(/https?:\/\//, '').slice(0, 20))}</span></button>`
-          }
-          html += '</div>'
-        }
-        if (!hosted.length && !joined.length) {
-          html += '<div style="text-align:center;padding:30px;opacity:0.6"><p>No channels yet.</p><p style="font-size:13px">Create one to invite friends, or join one with an invite code.</p></div>'
-        }
-        if (currentChannelId) {
-          html += `<div id="channelDetail"></div>`
-        }
-        container.innerHTML = html
-      }
-
-      async function showChannel(channelId) {
-        currentChannelId = channelId
-        renderChannels()
-        const detail = document.getElementById("channelDetail")
-        if (!detail) return
-        detail.innerHTML = '<div class="msg" style="font-size:13px">Loading channel...</div>'
-        const res = await req("GET", `/channels/${channelId}`)
-        if (res.error) { detail.innerHTML = `<div class="msg" style="color:red;font-size:13px">${res.error}</div>`; return }
-        let html = ''
-        const isHub = res.isHub
-        if (res.channelName) {
-          html += `<div style="font-weight:600;font-size:15px;margin:8px 0">${escapeHtml(res.channelName)}</div>`
-        }
-        if (res.pendingCard) {
-          html += '<div class="ch-section-title">Pending Card (needs approval)</div>'
-          html += `<div class="channel-pending"><div class="draft-text">${escapeHtml(res.pendingCard.draft || res.pendingCard.approved_content || "")}</div>`
-          html += '<div class="channel-actions">'
-          html += `<button onclick="approveCard('${channelId}')">Approve</button>`
-          html += `<button onclick="suggestCard('${channelId}')">Re-draft</button>`
-          html += '</div></div>'
-        } else if (!isHub) {
-          html += `<div style="margin:8px 0"><button onclick="suggestCard('${channelId}')" style="padding:8px">Update My Status</button></div>`
-        }
-        if (isHub) {
-          html += `<div style="margin:8px 0"><button onclick="updateHostCard('${channelId}')" style="padding:8px">Update My Card</button></div>`
-        }
-        html += '<div class="ch-section-title">Members</div>'
-        const members = res.members || []
-        if (!members.length) {
-          html += '<div style="opacity:0.6;font-size:13px">No cards yet. Invite people!</div>'
-        }
-        for (const m of members) {
-          html += `<div class="channel-card ${isHub && m.worker_url === '__host__' ? 'host' : ''}">`
-          html += `<div class="member-name">${escapeHtml(m.display_name)}</div>`
-          html += m.content ? `<div class="card-content">${escapeHtml(m.content)}</div>` : '<div class="card-content" style="opacity:0.4">No status yet</div>'
-          if (m.approved_at) html += `<div class="card-time">${relativeTime(m.approved_at)}</div>`
-          html += '</div>'
-        }
-        if (isHub) {
-          const channel = (channelsCache?.hosted || []).find(c => String(c.id) === channelId)
-          if (channel) {
-            html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12px">`
-            html += `<button onclick="copyInvite('${channelId}')" style="padding:6px;font-size:12px;width:auto">Copy Invite Code</button> `
-            html += `<button onclick="generateInvite('${channelId}')" style="padding:6px;font-size:12px;width:auto">Generate New Code</button> `
-            html += `<button onclick="deleteChannel('${channelId}')" style="padding:6px;font-size:12px;width:auto;color:red">Delete Channel</button>`
-            html += `<div id="inviteDisplay-${channelId}" style="margin-top:6px"></div>`
-            html += '</div>'
-          }
-        } else {
-          html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">`
-          html += `<button onclick="leaveChannel('${channelId}')" style="padding:6px;font-size:12px;width:auto;color:red">Leave Channel</button>`
-          html += '</div>'
-        }
-        detail.innerHTML = html
-      }
-
-      async function suggestCard(channelId) {
-        const detail = document.getElementById("channelDetail")
-        detail.innerHTML = '<div class="msg" style="font-size:13px">AI drafting your status...</div>'
-        const res = await req("POST", `/channels/${channelId}/suggest-card`)
-        if (res.draft) {
-          showChannel(channelId)
-        } else {
-          detail.innerHTML = `<div class="msg" style="color:red;font-size:13px">${res.error || "Failed to draft card"}</div>`
-        }
-      }
-
-      async function approveCard(channelId) {
-        const detail = document.getElementById("channelDetail")
-        const pendingEl = detail?.querySelector('.draft-text')
-        const content = pendingEl?.textContent?.trim() || prompt("Enter your status update:")
-        if (!content) return
-        detail.innerHTML = '<div class="msg" style="font-size:13px">Publishing...</div>'
-        const res = await req("POST", `/channels/${channelId}/approve-card`, { content })
-        if (res.success) {
-          showChannel(channelId)
-        } else {
-          detail.innerHTML = `<div class="msg" style="color:red;font-size:13px">${res.error || "Failed to approve"}</div>`
-        }
-      }
-
-      async function updateHostCard(channelId) {
-        const content = prompt("Enter your status update:")
-        if (!content) return
-        const detail = document.getElementById("channelDetail")
-        detail.innerHTML = '<div class="msg" style="font-size:13px">Updating...</div>'
-        const res = await req("POST", `/channels/${channelId}/approve-card`, { content })
-        if (res.success) {
-          showChannel(channelId)
-        } else {
-          detail.innerHTML = `<div class="msg" style="color:red;font-size:13px">${res.error || "Failed to update"}</div>`
-        }
-      }
-
-      let inviteCodeCache = {}
-
-      async function createChannel() {
-        const name = document.getElementById("chCreateName").value.trim()
-        const displayName = document.getElementById("chCreateDisplayName").value.trim() || "Me"
-        if (!name) return alert("Enter a channel name")
-        const res = await req("POST", "/channels/create", { name, displayName })
-        if (res.channelId) {
-          inviteCodeCache[res.channelId] = res.inviteCode
-          toggleCreateForm()
-          currentChannelId = String(res.channelId)
-          loadChannels()
-        } else {
-          alert(res.error || "Failed to create channel")
-        }
-      }
-
-      async function joinChannel() {
-        const hubUrl = document.getElementById("chJoinUrl").value.trim()
-        const inviteCode = document.getElementById("chJoinCode").value.trim()
-        const displayName = document.getElementById("chJoinName").value.trim()
-        if (!hubUrl || !inviteCode || !displayName) return alert("Fill all fields")
-        const res = await req("POST", "/channels/join", { hubUrl, inviteCode, displayName })
-        if (res.membershipId) {
-          toggleJoinForm()
-          currentChannelId = 'm' + res.membershipId
-          loadChannels()
-        } else {
-          alert(res.error || "Failed to join channel")
-        }
-      }
-
-      function toggleJoinForm() {
-        const form = document.getElementById("channelsJoinForm")
-        form.style.display = form.style.display === 'none' ? '' : 'none'
-      }
-
-      function toggleCreateForm() {
-        const form = document.getElementById("channelsCreateForm")
-        form.style.display = form.style.display === 'none' ? '' : 'none'
-      }
-
-      async function copyInvite(channelId) {
-        if (inviteCodeCache[channelId]) {
-          showInvite(channelId, inviteCodeCache[channelId])
-          return
-        }
-        const res = await req("POST", `/channels/${channelId}/reinvite`)
-        if (res.inviteCode) {
-          inviteCodeCache[channelId] = res.inviteCode
-          showInvite(channelId, res.inviteCode)
-        }
-      }
-
-      async function generateInvite(channelId) {
-        const res = await req("POST", `/channels/${channelId}/reinvite`)
-        if (res.inviteCode) {
-          inviteCodeCache[channelId] = res.inviteCode
-          showInvite(channelId, res.inviteCode)
-        }
-      }
-
-      function showInvite(channelId, code) {
-        const el = document.getElementById(`inviteDisplay-${channelId}`)
-        if (el) {
-          const hubUrl = location.origin
-          el.innerHTML = `<div class="ch-invite-box">${escapeHtml(hubUrl)}<br>${escapeHtml(code)}</div><div style="font-size:12px;opacity:0.6">Share both URL and code. Expires in 24h.</div>`
-        }
-      }
-
-      async function leaveChannel(channelId) {
-        if (!confirm("Leave this channel?")) return
-        await req("DELETE", `/channels/${channelId}/leave`)
-        currentChannelId = null
-        loadChannels()
-      }
-
-      async function deleteChannel(channelId) {
-        if (!confirm("Delete this channel permanently?")) return
-        await req("DELETE", `/channels/${channelId}`)
-        currentChannelId = null
-        loadChannels()
       }
 
       let kanbanColumns = []
