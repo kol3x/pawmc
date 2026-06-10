@@ -258,8 +258,11 @@
     </div>
     <div id="main">
     <h1>Personal Assistant</h1>
-    <input id="apiKey" type="password" placeholder="API Key" />
-    <input id="kanbanApiKey" type="password" placeholder="KanbanFlow API Key (optional, for manual override)" />
+    <details style="margin-bottom:10px">
+      <summary style="cursor:pointer;user-select:none;font-size:14px;color:var(--blockquote)">Keys</summary>
+      <input id="apiKey" type="password" placeholder="API Key" />
+      <input id="kanbanApiKey" type="password" placeholder="KanbanFlow API Key (optional, for manual override)" />
+    </details>
     <div class="tabs">
       <button class="tab active" onclick="switchTab('chat')">Chat</button>
       <button class="tab" onclick="switchTab('query')">Query</button>
