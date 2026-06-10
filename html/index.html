@@ -846,7 +846,8 @@
           const imported = res.imported || {}
           const conflicts = res.conflicts || {}
           const conflictItems = [...(conflicts.categories || []), ...(conflicts.topics || [])]
-          result.innerHTML = `<div class="msg assistant">Imported: ${imported.categories || 0} categories, ${imported.topics || 0} topics, ${imported.conversations || 0} conversations${conflictItems.length ? `<br><span style="opacity:0.7;font-size:13px">Skipped (already exist): ${conflictItems.join(", ")}</span>` : ""}</div>`
+          const conflictItemsEscaped = conflictItems.map(i => escapeHtml(String(i))).join(", ")
+          result.innerHTML = `<div class="msg assistant">Imported: ${imported.categories || 0} categories, ${imported.topics || 0} topics, ${imported.conversations || 0} conversations${conflictItems.length ? `<br><span style="opacity:0.7;font-size:13px">Skipped (already exist): ${conflictItemsEscaped}</span>` : ""}</div>`
           loadCategories()
           refreshConversations()
         } catch (err) {
