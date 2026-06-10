@@ -23,7 +23,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Set API_KEY secret
-        run: echo "${{ secrets.API_KEY }}" | npx wrangler secret put API_KEY
+        run: |
+          cat > /tmp/api-key <<'EOF'
+          ${{ secrets.API_KEY }}
+          EOF
+          cat /tmp/api-key | npx wrangler secret put API_KEY
+          rm /tmp/api-key
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Print URL
