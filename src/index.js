@@ -110,9 +110,10 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} topic
    * @param {string} userMessage
    * @param {string[]} [contextSources] - Optional names of context providers to inject (e.g. "kanban-rundown")
+   * @param {boolean} [noteMode] - If true, skips full AI response and just acknowledges
    * @returns {Promise<{response: string, conversationId: number}>}
    */
-  async chat(category, topic, userMessage, contextSources = []) {
+  async chat(category, topic, userMessage, contextSources = [], noteMode = false) {
     const stage = "chat";
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
@@ -155,21 +156,25 @@ export class AssistantDurableObject extends DurableObject {
 
       messages.push({ role: "user", content: userMessage });
 
-      const contextParts = [];
-      if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`);
-      if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
-      if (!contextParts.length) contextParts.push("You have no prior context about this topic. Ask the user about their situation if needed.");
+      const systemPrompt = noteMode
+        ? "The user is saving a context note. Acknowledge with exactly one short word."
+        : await (async () => {
+          const contextParts = [];
+          if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`);
+          if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
+          if (!contextParts.length) contextParts.push("You have no prior context about this topic. Ask the user about their situation if needed.");
 
-      if (contextSources.length) {
-        const injected = await resolveContexts(this.env, this, contextSources);
-        contextParts.push(...injected);
-      }
+          if (contextSources.length) {
+            const injected = await resolveContexts(this.env, this, contextSources);
+            contextParts.push(...injected);
+          }
 
-      const systemPrompt = [
-        this.env.AI_SYSTEM_INSTRUCTION,
-        `You are a personal assistant helping with: ${category} / ${topic}.`,
-        ...contextParts
-      ].join("\n");
+          return [
+            this.env.AI_SYSTEM_INSTRUCTION,
+            `You are a personal assistant helping with: ${category} / ${topic}.`,
+            ...contextParts
+          ].join("\n");
+        })();
 
       const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
         messages: [
@@ -1104,13 +1109,13 @@ export default {
         try { body = await request.json(); } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
-        const { category, topic, message, contextSources: rawContextSources } = body ?? {};
+        const { category, topic, message, contextSources: rawContextSources, noteMode } = body ?? {};
         const contextSources = Array.isArray(rawContextSources) ? rawContextSources : [];
         if (!category?.trim() || !topic?.trim() || !message?.trim())
           return Response.json({ error: "category, topic, and message are required" }, { status: 400 });
 
-        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextSources=${JSON.stringify(contextSources)}`);
-        const result = await stub.chat(category, topic, message, contextSources);
+        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextSources=${JSON.stringify(contextSources)}, noteMode=${!!noteMode}`);
+        const result = await stub.chat(category, topic, message, contextSources, !!noteMode);
         return Response.json(result);
       }
 

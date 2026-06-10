@@ -274,7 +274,13 @@
       <datalist id="topicList"></datalist>
       <textarea id="message" placeholder="Message"></textarea>
       <div id="contextSources"></div>
-      <button id="sendBtn" onclick="send()">Send</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="sendBtn" onclick="send()" style="flex:1">Send</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;user-select:none">
+          <input type="checkbox" id="noteMode" onchange="toggleNoteMode()" style="width:auto;margin:0" />
+          Save as note
+        </label>
+      </div>
       <div id="messages"></div>
     </div>
     <div id="tab-query" class="tab-content">
@@ -607,6 +613,11 @@
         return [...document.querySelectorAll("#contextSources input:checked")].map(cb => cb.value)
       }
 
+      function toggleNoteMode() {
+        const btn = document.getElementById("sendBtn")
+        btn.textContent = document.getElementById("noteMode").checked ? "Save Note" : "Send"
+      }
+
       /** Sends a chat message. Auto-generates category/topic if empty with a confirm step. */
       async function send() {
         const btn = document.getElementById("sendBtn")
@@ -622,10 +633,16 @@
           return
         }
         btn.textContent = "Send"
+        const noteMode = document.getElementById("noteMode").checked
         addMsg("user", message.value)
         const contextSources = getSelectedContextSources()
-        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value, contextSources: contextSources.length ? contextSources : undefined })
-        addMsg("assistant", res.response || res.error)
+        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value, contextSources: contextSources.length ? contextSources : undefined, noteMode })
+        if (noteMode) {
+          msgs.innerHTML += `<div class="msg" style="opacity:0.5;font-size:12px"><i>📝 Note saved</i></div>`
+          msgs.scrollTop = msgs.scrollHeight
+        } else {
+          addMsg("assistant", res.response || res.error)
+        }
         message.value = ""
         if (res.conversationId) currentConvId = res.conversationId
         await refreshConversations()
