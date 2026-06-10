@@ -926,6 +926,118 @@ export class AssistantDurableObject extends DurableObject {
       throw err;
     }
   }
+
+  /**
+   * Exports all categories, topics, and conversations as a portable JSON structure.
+   * Messages are parsed from their JSON string storage into arrays for readability.
+   * @returns {Promise<{version: number, exported_at: string, categories: Array<{name: string, summary: string, updated_at_timestamp: number, topics: Array<{name: string, summary: string, updated_at_timestamp: number, conversations: Array<{messages: Array<{role: string, content: string}>, last_message: string, created_at_timestamp: number}>}>}>}>}
+   */
+  async exportData() {
+    const stage = "exportData";
+    try {
+      const categories = [...this.#db.exec(`SELECT id, name, summary, updated_at_timestamp FROM categories ORDER BY name`).toArray()];
+      const result = [];
+      for (const cat of categories) {
+        const topics = [...this.#db.exec(
+          `SELECT id, name, summary, updated_at_timestamp FROM topics WHERE category_id = ? ORDER BY name`,
+          cat.id
+        ).toArray()];
+        const topicData = [];
+        for (const topic of topics) {
+          const conversations = [...this.#db.exec(
+            `SELECT id, messages, last_message, created_at_timestamp FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp ASC`,
+            topic.id
+          ).toArray()];
+          topicData.push({
+            name: topic.name,
+            summary: topic.summary,
+            updated_at_timestamp: topic.updated_at_timestamp,
+            conversations: conversations.map(c => ({
+              messages: JSON.parse(c.messages),
+              last_message: c.last_message,
+              created_at_timestamp: c.created_at_timestamp
+            }))
+          });
+        }
+        result.push({
+          name: cat.name,
+          summary: cat.summary,
+          updated_at_timestamp: cat.updated_at_timestamp,
+          topics: topicData
+        });
+      }
+      console.log(`[INFO][${stage}] Exported ${result.length} categories`);
+      return { version: 1, exported_at: new Date().toISOString(), categories: result };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Imports categories, topics, and conversations from an export JSON object.
+   * New categories/topics are inserted; existing ones (matched by name) are skipped
+   * and reported in the conflicts response. Conversations under new topics are always inserted.
+   * @param {{version?: number, exported_at?: string, categories: Array<{name: string, summary?: string, updated_at_timestamp?: number, topics?: Array<{name: string, summary?: string, updated_at_timestamp?: number, conversations?: Array<{messages?: Array<{role: string, content: string}>, last_message?: string, created_at_timestamp?: number}>}>}>}} data
+   * @returns {Promise<{imported: {categories: number, topics: number, conversations: number}, conflicts: {categories: string[], topics: string[]}}>}
+   */
+  async importData(data) {
+    const stage = "importData";
+    const imported = { categories: 0, topics: 0, conversations: 0 };
+    const conflicts = { categories: [], topics: [] };
+    try {
+      for (const cat of (data.categories || [])) {
+        if (!cat.name?.trim()) {
+          console.log(`[INFO][${stage}] Skipping unnamed category`);
+          continue;
+        }
+        const catRows = this.#db.exec(
+          `INSERT INTO categories (name, summary, updated_at_timestamp) VALUES (?, ?, ?) ON CONFLICT(name) DO NOTHING RETURNING id`,
+          cat.name.trim(), cat.summary || '', cat.updated_at_timestamp || Math.floor(Date.now() / 1000)
+        ).toArray();
+        let catId;
+        if (catRows.length) {
+          catId = catRows[0].id;
+          imported.categories++;
+        } else {
+          catId = this.#db.exec(`SELECT id FROM categories WHERE name = ?`, cat.name.trim()).one().id;
+          conflicts.categories.push(cat.name.trim());
+        }
+        for (const topic of (cat.topics || [])) {
+          if (!topic.name?.trim()) {
+            console.log(`[INFO][${stage}] Skipping unnamed topic in category=${cat.name}`);
+            continue;
+          }
+          const topicRows = this.#db.exec(
+            `INSERT INTO topics (category_id, name, summary, updated_at_timestamp) VALUES (?, ?, ?, ?) ON CONFLICT(category_id, name) DO NOTHING RETURNING id`,
+            catId, topic.name.trim(), topic.summary || '', topic.updated_at_timestamp || Math.floor(Date.now() / 1000)
+          ).toArray();
+          let topicId;
+          if (topicRows.length) {
+            topicId = topicRows[0].id;
+            imported.topics++;
+          } else {
+            conflicts.topics.push(`${cat.name.trim()}/${topic.name.trim()}`);
+            continue;
+          }
+          for (const conv of (topic.conversations || [])) {
+            const messages = Array.isArray(conv.messages) ? conv.messages : [];
+            const lastMsg = conv.last_message || (messages.length ? (messages[messages.length - 1]?.content || "").slice(0, 200) : "");
+            this.#db.exec(
+              `INSERT INTO conversations (topic_id, messages, last_message, created_at_timestamp) VALUES (?, ?, ?, ?)`,
+              topicId, JSON.stringify(messages), lastMsg, conv.created_at_timestamp || Math.floor(Date.now() / 1000)
+            );
+            imported.conversations++;
+          }
+        }
+      }
+      console.log(`[INFO][${stage}] Imported: ${JSON.stringify(imported)}, conflicts: ${JSON.stringify(conflicts)}`);
+      return { imported, conflicts };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
 }
 
 /**
@@ -1150,6 +1262,25 @@ export default {
 
         console.log(`[INFO][${stage}] Generating kanban rundown`);
         const result = await stub.generateKanbanRundown(kanbanApiKey, body?.customPrompt);
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/export") {
+        console.log(`[INFO][${stage}] Exporting all data`);
+        const result = await stub.exportData();
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/import") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        if (!body?.data) {
+          return Response.json({ error: "data field is required" }, { status: 400 });
+        }
+        console.log(`[INFO][${stage}] Importing data`);
+        const result = await stub.importData(body.data);
         return Response.json(result);
       }
 

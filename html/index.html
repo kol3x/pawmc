@@ -264,6 +264,7 @@
       <button class="tab active" onclick="switchTab('chat')">Chat</button>
       <button class="tab" onclick="switchTab('query')">Query</button>
       <button class="tab" onclick="switchTab('explore')">Explore</button>
+      <button class="tab" onclick="switchTab('data')">Data</button>
       <button class="tab" onclick="switchTab('kanban')">Kanban</button>
     </div>
     <div id="tab-chat" class="tab-content active">
@@ -300,6 +301,20 @@
     </div>
     <div id="tab-explore" class="tab-content">
       <div id="exploreList"></div>
+    </div>
+    <div id="tab-data" class="tab-content">
+      <fieldset>
+        <legend>Export</legend>
+        <button id="exportBtn" onclick="exportData()">Export All Data</button>
+        <div id="exportResult"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Import</legend>
+        <input type="file" id="importFile" accept=".json" onchange="previewImport()" />
+        <div id="importPreview" style="font-size:13px"></div>
+        <button id="importBtn" onclick="importData()" disabled>Import</button>
+        <div id="importResult"></div>
+      </fieldset>
     </div>
     <div id="tab-kanban" class="tab-content">
       <fieldset>
@@ -749,6 +764,96 @@
         document.getElementById("kanbanResults").innerHTML = '<div class="msg">Generating rundown...</div>'
         const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value, customPrompt: kanbanPrompt.value || undefined })
         document.getElementById("kanbanResults").innerHTML = `<div class="msg assistant">${parseMarkdown(res.response || res.error)}</div>`
+      }
+
+      /**
+       * Exports all data by calling /export and triggers a JSON file download.
+       * Uses the API key from the input field for authentication.
+       * @returns {Promise<void>}
+       */
+      async function exportData() {
+        const btn = document.getElementById("exportBtn")
+        const result = document.getElementById("exportResult")
+        btn.disabled = true
+        btn.textContent = "Exporting..."
+        result.innerHTML = '<div class="msg">Exporting all data...</div>'
+        try {
+          const res = await req("POST", "/export")
+          const blob = new Blob([JSON.stringify(res, null, 2)], { type: "application/json" })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement("a")
+          a.href = url
+          a.download = `personal-assistant-${new Date().toISOString().slice(0, 10)}.json`
+          a.click()
+          URL.revokeObjectURL(url)
+          result.innerHTML = `<div class="msg assistant">Exported ${res.categories?.length || 0} categories</div>`
+        } catch (err) {
+          result.innerHTML = `<div class="msg" style="color:red">Error: ${err.message}</div>`
+        }
+        btn.disabled = false
+        btn.textContent = "Export All Data"
+      }
+
+      /**
+       * Reads the selected JSON import file, validates its structure, and shows a preview
+       * of categories/topics/conversations counts. Enables the Import button on success.
+       * @returns {Promise<void>}
+       */
+      async function previewImport() {
+        const fileInput = document.getElementById("importFile")
+        const preview = document.getElementById("importPreview")
+        const importBtn = document.getElementById("importBtn")
+        const file = fileInput.files?.[0]
+        if (!file) {
+          importBtn.disabled = true
+          preview.innerHTML = ""
+          return
+        }
+        try {
+          const text = await file.text()
+          const data = JSON.parse(text)
+          if (!data.categories) throw new Error("Invalid format: missing categories array")
+          const catCount = data.categories.length
+          const topicCount = data.categories.reduce((s, c) => s + (c.topics?.length || 0), 0)
+          const convCount = data.categories.reduce((s, c) => s + c.topics.reduce((s2, t) => s2 + (t.conversations?.length || 0), 0), 0)
+          preview.innerHTML = `<span>Found <b>${catCount}</b> categories, <b>${topicCount}</b> topics, <b>${convCount}</b> conversations. Existing items will be preserved, new ones added.</span>`
+          importBtn.disabled = false
+        } catch (err) {
+          preview.innerHTML = `<span style="color:red">Invalid file: ${err.message}</span>`
+          importBtn.disabled = true
+        }
+      }
+
+      /**
+       * Reads the selected JSON file and sends it to /import. Displays imported counts
+       * and any conflicts (items skipped because they already exist). Refreshes categories
+       * and conversations on success.
+       * @returns {Promise<void>}
+       */
+      async function importData() {
+        const fileInput = document.getElementById("importFile")
+        const result = document.getElementById("importResult")
+        const importBtn = document.getElementById("importBtn")
+        const file = fileInput.files?.[0]
+        if (!file) return
+        importBtn.disabled = true
+        importBtn.textContent = "Importing..."
+        result.innerHTML = '<div class="msg">Importing data...</div>'
+        try {
+          const text = await file.text()
+          const data = JSON.parse(text)
+          const res = await req("POST", "/import", { data })
+          const imported = res.imported || {}
+          const conflicts = res.conflicts || {}
+          const conflictItems = [...(conflicts.categories || []), ...(conflicts.topics || [])]
+          result.innerHTML = `<div class="msg assistant">Imported: ${imported.categories || 0} categories, ${imported.topics || 0} topics, ${imported.conversations || 0} conversations${conflictItems.length ? `<br><span style="opacity:0.7;font-size:13px">Skipped (already exist): ${conflictItems.join(", ")}</span>` : ""}</div>`
+          loadCategories()
+          refreshConversations()
+        } catch (err) {
+          result.innerHTML = `<div class="msg" style="color:red">Error: ${err.message}</div>`
+        }
+        importBtn.disabled = false
+        importBtn.textContent = "Import"
       }
     </script>
   </body>
