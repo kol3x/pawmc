@@ -5,97 +5,57 @@ A personal LLM assistant built on Cloudflare Workers with Durable Objects and SQ
 ## Features
 
 - **Conversation Storage**: Stores conversations by category and topic
-- **Context-Aware**: Maintains summary context for each topic
-- **Daily Summaries**: Automatically updates topic summaries daily via cron
+- **Context-Aware**: Maintains AI-generated summaries for each topic
+- **Daily Summaries**: Automatically updates topic summaries via cron
 - **Export/Import**: Full data export and import for backup and migration
 - **API Key Auth**: Secure access with Bearer token authentication
-- **Web Interface**: Simple HTML UI at root path
-
-## Web Interface
-
-Visit `https://your-worker.workers.dev/` to use the built-in chat UI. 
-
-## API Endpoints
-
-### POST /chat
-
-Send a message and receive an AI response.
-
-```bash
-curl -X POST https://your-worker.workers.dev/chat \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"category": "work", "topic": "project-x", "message": "Hello"}'
-```
-
-### GET /categories
-
-Get all categories, topics, and their summaries.
-
-```bash
-curl https://your-worker.workers.dev/categories \
-  -H "Authorization: Bearer YOUR_API_KEY"
-```
-
-### POST /update-summaries
-
-Manually trigger summary updates.
-
-```bash
-curl -X POST https://your-worker.workers.dev/update-summaries \
-  -H "Authorization: Bearer YOUR_API_KEY"
-```
-
-### POST /export
-
-Export all categories, topics, and conversations as JSON. Complete message history is included.
-
-```bash
-curl -X POST https://your-worker.workers.dev/export \
-  -H "Authorization: Bearer YOUR_API_KEY" > backup.json
-```
-
-### POST /import
-
-Import data from a previous export. New categories/topics are added; existing ones are skipped. Accepts `{ "data": <export JSON> }`.
-
-```bash
-curl -X POST https://your-worker.workers.dev/import \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d @backup.json
-```
-
-Response includes imported counts and any conflicts:
-
-```json
-{
-  "imported": { "categories": 5, "topics": 12, "conversations": 48 },
-  "conflicts": { "categories": ["Work"], "topics": ["Work/Project X"] }
-}
-```
+- **Web Interface**: Chat UI at the root URL
 
 ## Setup
 
-### 1. Install dependencies
+### 1. Create your own copy
 
-```bash
-npm install
+Click **"Use this template"** on the [GitHub repo](https://github.com/kol3x/personal-assistant) to create your own repository.
+
+### 2. Create a Cloudflare account
+
+Go to [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and create a free account. No credit card required.
+
+### 3. Create an API token
+
+1. Go to [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
+2. Click **Create Token**
+3. Click **Use template** next to "Edit Cloudflare Workers"
+4. Under **Account Resources**, select your account
+5. Click **Continue to summary**, then **Create Token**
+6. Copy the token — you'll need it in the next step
+
+### 4. Add secrets to GitHub
+
+In your new GitHub repository:
+
+1. Go to **Settings → Secrets and variables → Actions**
+2. Click **New repository secret**
+3. Add these two secrets:
+
+| Name | Value |
+|------|-------|
+| `CLOUDFLARE_API_TOKEN` | The API token you created in step 3 |
+| `API_KEY` | A secret password of your choice (you'll enter this in the web app to log in) |
+
+### 5. Deploy
+
+Push any change to the `main` branch — the GitHub Action will automatically deploy. Your assistant will be live at:
+
+```
+https://personal-assistant.YOUR-ACCOUNT.workers.dev
 ```
 
-### 2. Set API key secret
+Open that URL, enter your `API_KEY` at the top of the page, and start chatting.
 
-```bash
-npx wrangler secret put API_KEY
-```
+## Getting updates
 
-Enter your desired API key when prompted.
-
-### 3. Deploy
-
-```bash
-npm run deploy
-```
+When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and the action will redeploy automatically.
 
 ## Free Tier Limits
 
