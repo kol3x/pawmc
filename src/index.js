@@ -437,7 +437,7 @@ export class AssistantDurableObject extends DurableObject {
       const summaryPrompt = [
         this.env.AI_SYSTEM_INSTRUCTION,
         topic.summary ? `Existing summary: ${topic.summary}` : null,
-        `Update the summary by incorporating the following NEW messages. Keep it concise and focus on key information, decisions, and facts. Category: ${topic.category_name}, Topic: ${topic.name}.`
+        `Update the summary by incorporating the following NEW messages. Category: ${topic.category_name}, Topic: ${topic.name}. Messages are labeled with role fields ("user" and "assistant"). Prioritize "user" messages — they represent confirmed information and intent. "assistant" messages are speculative; only include their content if the user explicitly agreed or confirmed it. Be conservative — avoid adding unconfirmed assumptions.`
       ].filter(Boolean).join("\n");
 
       console.log(`[INFO][${stage}] Updating topic summary: id=${topic.id}, name=${topic.name}, newMessages=${newMessages.length}`);
