@@ -13,12 +13,13 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - name: Detect Cloudflare Account ID
+      - name: Detect Workers Subdomain
         run: |
-          ACCOUNT_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-            "https://api.cloudflare.com/client/v4/accounts" | \
-            python3 -c "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
-          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+          EMAIL=$(curl -s -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            "https://api.cloudflare.com/client/v4/user" | \
+            python3 -c "import sys,json; print(json.load(sys.stdin)['result']['email'])")
+          SUBDOMAIN="${EMAIL%@*}"
+          echo "CLOUDFLARE_SUBDOMAIN=$SUBDOMAIN" >> $GITHUB_ENV
       - run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -32,4 +33,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Print URL
-        run: echo "✅ Live at https://personal-assistant.$CLOUDFLARE_ACCOUNT_ID.workers.dev"
+        run: echo "✅ Live at https://personal-assistant.$CLOUDFLARE_SUBDOMAIN.workers.dev"
