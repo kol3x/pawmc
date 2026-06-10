@@ -158,7 +158,7 @@ export class AssistantDurableObject extends DurableObject {
 
       const systemPrompt = noteMode
         ? "The user is saving a context note. Acknowledge with exactly one short word."
-        : (() => {
+        : await (async () => {
           const contextParts = [];
           if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`);
           if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
