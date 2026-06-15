@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { resolve as resolveContexts, list as listContextSources } from "./context.js";
 
 /**
- * Cloudflare Worker that uses SQLite-backed Durable Object. Works as a personal LLM assistant. It stores conversations and can uses summed up context when generating responses.
+ * Cloudflare Worker that uses SQLite-backed Durable Object. Works as a personal LLM assistant. It stores conversations and uses summed up context when generating responses.
  * 
  * Features:
  * - Stores conversations by predifined category and topic (e.g., "work": "project X context", "personal": "choosing a country to travel", "languages": "Ukrainian"). 
@@ -102,6 +102,10 @@ export class AssistantDurableObject extends DurableObject {
     if (!convColumns.some(col => col.name === 'last_message')) {
       await this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`);
     }
+
+    if (!convColumns.some(col => col.name === 'context_categories')) {
+      await this.#db.exec(`ALTER TABLE conversations ADD COLUMN context_categories TEXT NOT NULL DEFAULT '[]'`);
+    }
   }
 
   /**
@@ -111,9 +115,10 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} userMessage
    * @param {string[]} [contextSources] - Optional names of context providers to inject (e.g. "kanban-rundown")
    * @param {boolean} [noteMode] - If true, skips full AI response and just acknowledges
+   * @param {Array<{category: string, topic?: string}>} [contextCategories] - Additional categories/topics to pull context from
    * @returns {Promise<{response: string, conversationId: number}>}
    */
-  async chat(category, topic, userMessage, contextSources = [], noteMode = false) {
+  async chat(category, topic, userMessage, contextSources = [], noteMode = false, contextCategories = []) {
     const stage = "chat";
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
@@ -147,8 +152,8 @@ export class AssistantDurableObject extends DurableObject {
         }
       } else {
         const newConversation = this.#db.exec(
-          `INSERT INTO conversations (topic_id, messages) VALUES (?, '[]') RETURNING id`,
-          topicRow.id
+          `INSERT INTO conversations (topic_id, messages, context_categories) VALUES (?, '[]', ?) RETURNING id`,
+          topicRow.id, JSON.stringify(contextCategories)
         ).one();
         conversationId = newConversation.id;
         console.log(`[INFO][${stage}] New conversation created: id=${conversationId}`);
@@ -167,6 +172,29 @@ export class AssistantDurableObject extends DurableObject {
           if (contextSources.length) {
             const injected = await resolveContexts(this.env, this, contextSources);
             contextParts.push(...injected);
+          }
+
+          if (contextCategories.length) {
+            for (const ctx of contextCategories) {
+              try {
+                const ctxCatRow = this.#db.exec(`SELECT id, summary FROM categories WHERE name = ?`, ctx.category.trim()).one();
+                if (!ctxCatRow) continue;
+                if (ctx.topic) {
+                  const ctxTopicRow = this.#db.exec(`SELECT summary FROM topics WHERE category_id = ? AND name = ?`, ctxCatRow.id, ctx.topic.trim()).one();
+                  if (ctxTopicRow?.summary) {
+                    contextParts.push(`Additional context from ${ctx.category}/${ctx.topic}: ${ctxTopicRow.summary}`);
+                  } else {
+                    contextParts.push(`Additional context from ${ctx.category}/${ctx.topic}: no prior context available.`);
+                  }
+                } else if (ctxCatRow.summary) {
+                  contextParts.push(`Additional context from ${ctx.category}: ${ctxCatRow.summary}`);
+                } else {
+                  contextParts.push(`Additional context from ${ctx.category}: no prior context available.`);
+                }
+              } catch (err) {
+                console.error(`[ERROR][${stage}] Failed to resolve context category: ${err.message}`);
+              }
+            }
           }
 
           return [
@@ -220,9 +248,9 @@ export class AssistantDurableObject extends DurableObject {
           try {
             const columnId = columnName ? await getColumnId(columnName) : undefined;
             await this.createKanbanTask(kanbanKey, taskName, columnId, description);
-            modifiedMessage = modifiedMessage.replace(blockMatch[0], `✅ Task created: "${taskName}"${columnName ? ` in ${columnName}` : ""}`);
+            modifiedMessage = modifiedMessage.replace(blockMatch[0], `Task created: "${taskName}"${columnName ? ` in ${columnName}` : ""}`);
           } catch (err) {
-            modifiedMessage = modifiedMessage.replace(blockMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+            modifiedMessage = modifiedMessage.replace(blockMatch[0], `Failed to create task "${taskName}": ${err.message}`);
           }
         }
       }
@@ -237,9 +265,9 @@ export class AssistantDurableObject extends DurableObject {
             try {
               const columnId = await getColumnId(columnName);
               await this.createKanbanTask(kanbanKey, taskName, columnId);
-              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `✅ Task created: "${taskName}" in ${columnName}`);
+              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `Task created: "${taskName}" in ${columnName}`);
             } catch (err) {
-              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `❌ Failed to create task "${taskName}": ${err.message}`);
+              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `Failed to create task "${taskName}": ${err.message}`);
             }
           }
         }
@@ -249,8 +277,8 @@ export class AssistantDurableObject extends DurableObject {
 
       const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200);
       this.#db.exec(
-        `UPDATE conversations SET messages = ?, last_message = ? WHERE id = ?`,
-        JSON.stringify(messages), lastMsg, conversationId
+        `UPDATE conversations SET messages = ?, last_message = ?, context_categories = ? WHERE id = ?`,
+        JSON.stringify(messages), lastMsg, JSON.stringify(contextCategories), conversationId
       );
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`);
 
@@ -617,17 +645,22 @@ export class AssistantDurableObject extends DurableObject {
     const stage = "listConversations";
     try {
       const rows = [...this.#db.exec(`
-        SELECT c.id, c.created_at_timestamp, c.last_message, cat.name as category, t.name as topic
+        SELECT c.id, c.created_at_timestamp, c.last_message, c.context_categories, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
         ORDER BY c.created_at_timestamp DESC
         LIMIT 50
       `).toArray()];
-      const result = rows.map(r => ({
-        id: r.id, category: r.category, topic: r.topic, created_at: r.created_at_timestamp,
-        last_message: (r.last_message || "").slice(0, 80)
-      }));
+      const result = rows.map(r => {
+        let contextCategories = [];
+        try { contextCategories = JSON.parse(r.context_categories || '[]'); } catch {}
+        return {
+          id: r.id, category: r.category, topic: r.topic, created_at: r.created_at_timestamp,
+          last_message: (r.last_message || "").slice(0, 80),
+          contextCategories
+        };
+      });
       console.log(`[INFO][${stage}] Listed ${result.length} conversations`);
       return result;
     } catch (err) {
@@ -662,7 +695,7 @@ export class AssistantDurableObject extends DurableObject {
     const stage = "getConversation";
     try {
       const row = this.#db.exec(`
-        SELECT c.id, c.messages, cat.name as category, t.name as topic
+        SELECT c.id, c.messages, c.context_categories, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
@@ -670,8 +703,10 @@ export class AssistantDurableObject extends DurableObject {
       `, id).one();
       if (!row) throw new Error(`Conversation not found: ${id}`);
       const messages = JSON.parse(row.messages);
+      let contextCategories = [];
+      try { contextCategories = JSON.parse(row.context_categories || '[]'); } catch {}
       console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`);
-      return { id: row.id, category: row.category, topic: row.topic, messages };
+      return { id: row.id, category: row.category, topic: row.topic, messages, contextCategories };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -750,7 +785,7 @@ export class AssistantDurableObject extends DurableObject {
         if (!tasksByColumn[colName]) tasksByColumn[colName] = [];
         (group.tasks || []).forEach(task => {
           const subtasks = task.subTasks?.length
-            ? `\n  Subtasks: ${task.subTasks.map(s => `${s.name}${s.finished ? ' ✓' : ''}`).join(', ')}`
+            ? `\n  Subtasks: ${task.subTasks.map(s => `${s.name}${s.finished ? ' [done]' : ''}`).join(', ')}`
             : '';
           const color = task.color ? ` [${task.color}]` : '';
           tasksByColumn[colName].push(`- ${task.name}${color}${subtasks}`);
@@ -950,18 +985,23 @@ export class AssistantDurableObject extends DurableObject {
         const topicData = [];
         for (const topic of topics) {
           const conversations = [...this.#db.exec(
-            `SELECT id, messages, last_message, created_at_timestamp FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp ASC`,
+            `SELECT id, messages, last_message, context_categories, created_at_timestamp FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp ASC`,
             topic.id
           ).toArray()];
           topicData.push({
             name: topic.name,
             summary: topic.summary,
             updated_at_timestamp: topic.updated_at_timestamp,
-            conversations: conversations.map(c => ({
-              messages: JSON.parse(c.messages),
-              last_message: c.last_message,
-              created_at_timestamp: c.created_at_timestamp
-            }))
+            conversations: conversations.map(c => {
+              let contextCategories = [];
+              try { contextCategories = JSON.parse(c.context_categories || '[]'); } catch {}
+              return {
+                messages: JSON.parse(c.messages),
+                last_message: c.last_message,
+                created_at_timestamp: c.created_at_timestamp,
+                contextCategories
+              };
+            })
           });
         }
         result.push({
@@ -1028,9 +1068,10 @@ export class AssistantDurableObject extends DurableObject {
           for (const conv of (topic.conversations || [])) {
             const messages = Array.isArray(conv.messages) ? conv.messages : [];
             const lastMsg = conv.last_message || (messages.length ? (messages[messages.length - 1]?.content || "").slice(0, 200) : "");
+            const contextCategories = Array.isArray(conv.contextCategories) ? JSON.stringify(conv.contextCategories) : '[]';
             this.#db.exec(
-              `INSERT INTO conversations (topic_id, messages, last_message, created_at_timestamp) VALUES (?, ?, ?, ?)`,
-              topicId, JSON.stringify(messages), lastMsg, conv.created_at_timestamp || Math.floor(Date.now() / 1000)
+              `INSERT INTO conversations (topic_id, messages, last_message, context_categories, created_at_timestamp) VALUES (?, ?, ?, ?, ?)`,
+              topicId, JSON.stringify(messages), lastMsg, contextCategories, conv.created_at_timestamp || Math.floor(Date.now() / 1000)
             );
             imported.conversations++;
           }
@@ -1109,13 +1150,14 @@ export default {
         try { body = await request.json(); } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
-        const { category, topic, message, contextSources: rawContextSources, noteMode } = body ?? {};
+        const { category, topic, message, contextSources: rawContextSources, noteMode, contextCategories: rawContextCategories } = body ?? {};
         const contextSources = Array.isArray(rawContextSources) ? rawContextSources : [];
+        const contextCategories = Array.isArray(rawContextCategories) ? rawContextCategories : [];
         if (!category?.trim() || !topic?.trim() || !message?.trim())
           return Response.json({ error: "category, topic, and message are required" }, { status: 400 });
 
-        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextSources=${JSON.stringify(contextSources)}, noteMode=${!!noteMode}`);
-        const result = await stub.chat(category, topic, message, contextSources, !!noteMode);
+        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextSources=${JSON.stringify(contextSources)}, contextCategories=${JSON.stringify(contextCategories)}, noteMode=${!!noteMode}`);
+        const result = await stub.chat(category, topic, message, contextSources, !!noteMode, contextCategories);
         return Response.json(result);
       }
 
@@ -1247,7 +1289,7 @@ export default {
           try {
             await stub.storeConversationMessage(body.category.trim(), body.topic.trim(), [
               { role: "user", content: `Created kanban task "${body.taskName}" in ${body.columnName}` },
-              { role: "assistant", content: `✅ Task created: "${body.taskName}" in ${body.columnName}` }
+              { role: "assistant", content: `Task created: "${body.taskName}" in ${body.columnName}` }
             ]);
           } catch (err) {
             console.error(`[ERROR][${stage}] Failed to store conversation: ${err.message}`);
