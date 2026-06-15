@@ -8,74 +8,18 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      :root {
-        --bg: #fff;
-        --text: #333;
-        --border: #ccc;
-        --input-bg: #fff;
-        --user: #4da3ff;
-        --code-bg: #f4f4f4;
-        --code-text: #333;
-        --blockquote: #666;
-      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      :root { --bg: #fff; --text: #333; --border: #ccc; --input-bg: #fff; --user: #4da3ff; --code-bg: #f4f4f4; --code-text: #333; --blockquote: #666; }
       @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #1a1a1a;
-          --text: #e0e0e0;
-          --border: #444;
-          --input-bg: #2a2a2a;
-          --user: #4da3ff;
-          --code-bg: #2a2a2a;
-          --code-text: #e0e0e0;
-          --blockquote: #999;
-        }
+        :root { --bg: #1a1a1a; --text: #e0e0e0; --border: #444; --input-bg: #2a2a2a; --user: #4da3ff; --code-bg: #2a2a2a; --code-text: #e0e0e0; --blockquote: #999; }
       }
-      body {
-        font-family: system-ui;
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 20px;
-        background: var(--bg);
-        color: var(--text);
-      }
-      input,
-      select,
-      button,
-      textarea {
-        width: 100%;
-        padding: 8px;
-        margin: 4px 0;
-        background: var(--input-bg);
-        color: var(--text);
-        border: 1px solid var(--border);
-      }
-      textarea {
-        height: 80px;
-        resize: none;
-      }
-      #messages {
-        height: 500px;
-        overflow-y: auto;
-        border: 1px solid var(--border);
-        padding: 10px;
-        margin: 10px 0;
-        background: var(--bg);
-      }
-      .msg {
-        margin: 8px 0;
-        line-height: 1.5;
-      }
-      .msg.user {
-        color: var(--user);
-      }
-      .msg.assistant {
-        color: var(--text);
-      }
+      body { font-family: system-ui; background: var(--bg); color: var(--text); }
+      input, select, button, textarea { width: 100%; padding: 8px; margin: 4px 0; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); }
+      textarea { height: 80px; resize: none; }
+      #messages { height: 500px; overflow-y: auto; border: 1px solid var(--border); padding: 10px; margin: 10px 0; background: var(--bg); }
+      .msg { margin: 8px 0; line-height: 1.5; }
+      .msg.user { color: var(--user); }
+      .msg.assistant { color: var(--text); }
       .msg.assistant p { margin: 0.5em 0; }
       .msg.assistant code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
       .msg.assistant pre { background: var(--code-bg); padding: 10px; border-radius: 5px; overflow-x: auto; }
@@ -83,134 +27,77 @@
       .msg.assistant ul, .msg.assistant ol { padding-left: 20px; }
       .msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { margin-top: 0.5em; }
       .msg.assistant blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
-      #sidebar {
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 280px;
-        height: 100%;
-        background: var(--input-bg);
-        border-right: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
-        z-index: 10;
-      }
-      #main { margin-left: 290px; max-width: 900px; }
-      .sidebar-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 16px;
-        border-bottom: 1px solid var(--border);
-      }
+      #sidebar { position: fixed; left: 0; top: 0; width: 280px; height: 100%; background: var(--input-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 10; }
+      #main { margin-left: 290px; max-width: 900px; padding: 20px; }
+      .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border); }
       .sidebar-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
       .sidebar-actions { display: flex; gap: 6px; }
-      .sidebar-actions button {
-        width: 32px; height: 32px; padding: 0;
-        display: flex; align-items: center; justify-content: center;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--input-bg);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 18px;
-        line-height: 1;
-      }
+      .sidebar-actions button { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); cursor: pointer; font-size: 18px; line-height: 1; }
       .sidebar-actions button:hover { background: var(--code-bg); }
-      #sidebarSearch {
-        margin: 8px 12px; padding: 8px 12px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--bg);
-        color: var(--text);
-        font-size: 13px;
-        width: auto;
-      }
+      #sidebarSearch { margin: 8px 12px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; width: auto; }
       #sidebarSearch::placeholder { color: var(--blockquote); }
-      #conversations {
-        flex: 1;
-        overflow-y: auto;
-        padding: 4px 8px;
-      }
-      .conv-item {
-        display: block;
-        width: 100%;
-        padding: 10px 12px;
-        cursor: pointer;
-        border-radius: 8px;
-        margin: 2px 0;
-        text-align: left;
-        border: none;
-        background: transparent;
-        color: var(--text);
-        transition: background 0.15s;
-      }
+      #conversations { flex: 1; overflow-y: auto; padding: 4px 8px; }
+      .conv-item { display: block; width: 100%; padding: 10px 12px; cursor: pointer; border-radius: 8px; margin: 2px 0; text-align: left; border: none; background: transparent; color: var(--text); transition: background 0.15s; }
       .conv-item:hover { background: var(--code-bg); }
       .conv-item.active { background: var(--user); color: #fff; }
       .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
-      .conv-title {
-        font-weight: 600;
-        font-size: 13px;
-        margin-bottom: 2px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .conv-preview {
-        font-size: 12px;
-        opacity: 0.7;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .conv-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 4px;
-      }
+      .conv-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .conv-preview { font-size: 12px; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .conv-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
       .conv-time { font-size: 11px; opacity: 0.5; }
-      .conv-delete {
-        opacity: 0;
-        background: none;
-        border: none;
-        color: inherit;
-        cursor: pointer;
-        padding: 2px 4px;
-        border-radius: 4px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-      }
+      .conv-delete { opacity: 0; background: none; border: none; color: inherit; cursor: pointer; padding: 2px 4px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; }
       .conv-item:hover .conv-delete { opacity: 0.5; }
       .conv-delete:hover { opacity: 1 !important; background: rgba(255,0,0,0.15); }
       .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
-      .update-btn {
-        margin: 8px 12px;
-        padding: 8px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--input-bg);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 12px;
-        flex-shrink: 0;
-        width: calc(100% - 24px);
-        white-space: nowrap;
-      }
+      #explorePanel { border-top: 1px solid var(--border); }
+      #exploreToggle { display: flex; align-items: center; gap: 6px; padding: 10px 16px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); background: none; border: none; width: 100%; text-align: left; }
+      #exploreToggle:hover { background: var(--code-bg); }
+      #exploreToggle .chevron { font-size: 0.8em; transition: transform 0.2s; color: var(--blockquote); }
+      #exploreToggle.collapsed .chevron { transform: rotate(-90deg); }
+      #exploreBody { max-height: 300px; overflow-y: auto; padding: 8px 12px; }
+      #exploreBody.collapsed { display: none; }
+      .update-btn { margin: 8px 12px; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); cursor: pointer; font-size: 12px; flex-shrink: 0; width: calc(100% - 24px); white-space: nowrap; }
       .update-btn:hover { background: var(--code-bg); }
       #contextSources { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0; }
       #contextSources label { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; user-select: none; }
       #contextSources input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
-      .tabs { display: flex; gap: 10px; margin-bottom: 10px; }
-      .tab { padding: 10px 20px; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); }
-      .tab.active { background: var(--user); color: #fff; }
-      .tab-content { display: none; }
-      .tab-content.active { display: block; }
-      fieldset { border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin: 10px 0; }
-      legend { font-weight: bold; padding: 0 5px; }
-      .cat-item { border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin: 10px 0; }
-      .cat-name { font-weight: bold; font-size: 1.1em; }
+      .chip-input { border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; margin: 4px 0; background: var(--input-bg); cursor: text; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 36px; position: relative; }
+      .chip-input:focus-within { border-color: var(--user); }
+      .chip-list { display: contents; }
+      .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-size: 12px; line-height: 1.4; white-space: nowrap; cursor: default; }
+      .chip.primary { background: var(--user); color: #fff; }
+      .chip.context { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
+      .chip-remove { cursor: pointer; opacity: 0.6; font-size: 14px; line-height: 1; margin-left: 2px; }
+      .chip-remove:hover { opacity: 1; }
+      .chip-input input { border: none; outline: none; flex: 1; min-width: 120px; padding: 4px; margin: 0; background: transparent; color: var(--text); font-size: 13px; }
+      .chat-section { margin-bottom: 8px; }
+      .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.6; margin-bottom: 2px; }
+      .about-box { border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; background: var(--input-bg); display: flex; align-items: center; gap: 4px; min-height: 36px; position: relative; }
+      .about-box:focus-within { border-color: var(--user); }
+      .about-chip { display: none; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-size: 12px; line-height: 1.4; background: var(--user); color: #fff; white-space: nowrap; }
+      .about-box.has-chip .about-chip { display: inline-flex; }
+      .about-box.has-chip .about-input { display: none; }
+      .about-input { border: none; outline: none; flex: 1; min-width: 120px; padding: 4px; margin: 0; background: transparent; color: var(--text); font-size: 13px; }
+      .suggestions-below { position: relative; }
+      .suggestions-below .chip-suggestions { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; }
+      .chip-suggestions { position: absolute; top: 100%; left: 0; right: 0; background: var(--input-bg); border: 1px solid var(--border); border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 100; display: none; }
+      .chip-suggestions.visible { display: block; }
+      .chip-suggestion { padding: 6px 10px; cursor: pointer; font-size: 13px; }
+      .chip-suggestion:hover, .chip-suggestion.highlighted { background: var(--code-bg); }
+      .chip-suggestion .sug-label { font-weight: 500; }
+      .chip-suggestion .sug-type { font-size: 11px; opacity: 0.6; margin-left: 6px; }
+
+      .cat-item { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden; }
+      .cat-header, .topic-header { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--input-bg); border-radius: 6px; user-select: none; margin-bottom: 4px; }
+      .cat-header:hover, .topic-header:hover { background: var(--code-bg); }
+      .cat-header .icon, .topic-header .icon { font-weight: bold; font-family: monospace; }
+      .cat-header .cat-title, .topic-header .topic-title { flex: 1; font-weight: bold; }
+      .cat-header .chevron, .topic-header .chevron { font-size: 0.8em; transition: transform 0.2s; color: var(--blockquote); }
+      .cat-header.collapsed .chevron, .topic-header.collapsed .chevron { transform: rotate(-90deg); }
+      .cat-body, .topic-body { padding: 10px 10px 10px 20px; border-left: 2px solid var(--border); margin-left: 12px; }
+      .cat-body.collapsed, .topic-body.collapsed { display: none; }
+      .topic-header { font-size: 0.9em; padding: 8px; background: transparent; }
+      .topic-header:hover { background: var(--code-bg); }
       .cat-summary { margin: 5px 0; color: var(--blockquote); }
       .cat-summary p { margin: 0.5em 0; }
       .cat-summary code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
@@ -229,152 +116,6 @@
       .topic-summary ul, .topic-summary ol { padding-left: 20px; }
       .topic-summary h1, .topic-summary h2, .topic-summary h3 { margin-top: 0.5em; }
       .topic-summary blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
-
-      /* Collapsible Explore Tab */
-      .cat-header, .topic-header { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--input-bg); border-radius: 6px; user-select: none; margin-bottom: 4px; }
-      .cat-header:hover, .topic-header:hover { background: var(--code-bg); }
-      .cat-header .icon, .topic-header .icon { font-weight: bold; font-family: monospace; }
-      .cat-header .cat-title, .topic-header .topic-title { flex: 1; font-weight: bold; }
-      .cat-header .chevron, .topic-header .chevron { font-size: 0.8em; transition: transform 0.2s; color: var(--blockquote); }
-      .cat-header.collapsed .chevron, .topic-header.collapsed .chevron { transform: rotate(-90deg); }
-      .cat-body, .topic-body { padding: 10px 10px 10px 20px; border-left: 2px solid var(--border); margin-left: 12px; }
-      .cat-body.collapsed, .topic-body.collapsed { display: none; }
-      .topic-header { font-size: 0.9em; padding: 8px; background: transparent; }
-      .topic-header:hover { background: var(--code-bg); }
-      .cat-item { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden; }
-
-      .chip-input {
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        padding: 4px 8px;
-        margin: 4px 0;
-        background: var(--input-bg);
-        cursor: text;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        align-items: center;
-        min-height: 36px;
-        position: relative;
-      }
-      .chip-input:focus-within { border-color: var(--user); }
-      .chip-list { display: contents; }
-      .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 12px;
-        line-height: 1.4;
-        white-space: nowrap;
-        cursor: default;
-      }
-      .chip.primary { background: var(--user); color: #fff; }
-      .chip.context { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
-      .chip-remove {
-        cursor: pointer;
-        opacity: 0.6;
-        font-size: 14px;
-        line-height: 1;
-        margin-left: 2px;
-      }
-      .chip-remove:hover { opacity: 1; }
-      .chip-input input {
-        border: none;
-        outline: none;
-        flex: 1;
-        min-width: 120px;
-        padding: 4px;
-        margin: 0;
-        background: transparent;
-        color: var(--text);
-        font-size: 13px;
-      }
-      .chat-section { margin-bottom: 8px; }
-      .section-label {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        opacity: 0.6;
-        margin-bottom: 2px;
-      }
-      .about-box {
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        padding: 4px 8px;
-        background: var(--input-bg);
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        min-height: 36px;
-        position: relative;
-      }
-      .about-box:focus-within { border-color: var(--user); }
-      .about-chip {
-        display: none;
-        align-items: center;
-        gap: 4px;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 12px;
-        line-height: 1.4;
-        background: var(--user);
-        color: #fff;
-        white-space: nowrap;
-      }
-      .about-box.has-chip .about-chip { display: inline-flex; }
-      .about-box.has-chip .about-input { display: none; }
-      .about-input {
-        border: none;
-        outline: none;
-        flex: 1;
-        min-width: 120px;
-        padding: 4px;
-        margin: 0;
-        background: transparent;
-        color: var(--text);
-        font-size: 13px;
-      }
-      .suggestions-below {
-        position: relative;
-      }
-      .suggestions-below .chip-suggestions {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        z-index: 100;
-      }
-      .chip-suggestions {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        background: var(--input-bg);
-        border: 1px solid var(--border);
-        border-top: none;
-        border-radius: 0 0 4px 4px;
-        max-height: 200px;
-        overflow-y: auto;
-        z-index: 100;
-        display: none;
-      }
-      .chip-suggestions.visible { display: block; }
-      .chip-suggestion {
-        padding: 6px 10px;
-        cursor: pointer;
-        font-size: 13px;
-      }
-      .chip-suggestion:hover,
-      .chip-suggestion.highlighted { background: var(--code-bg); }
-      .chip-suggestion .sug-label { font-weight: 500; }
-      .chip-suggestion .sug-type {
-        font-size: 11px;
-        opacity: 0.6;
-        margin-left: 6px;
-      }
     </style>
   </head>
   <body>
@@ -383,27 +124,25 @@
         <h3>Conversations</h3>
         <div class="sidebar-actions">
           <button onclick="newConversation()" title="New conversation">+</button>
+          <button onclick="toggleExplore()" id="exploreBtn" title="Explore memory tree">&#x1F332;</button>
         </div>
       </div>
       <input id="sidebarSearch" type="text" placeholder="Search conversations..." oninput="renderConversations()" />
       <div id="conversations"></div>
-      <button class="update-btn" onclick="updateSummaries()"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:middle;margin-right:4px"><path d="M2 7a5 5 0 0110 0M12 2v4.5H7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Update Summaries</button>
+      <div id="explorePanel">
+        <button id="exploreToggle" class="collapsed" onclick="toggleExplorePanel()">
+          <span class="chevron">&#x25BC;</span>
+          Memory Tree
+        </button>
+        <div id="exploreBody" class="collapsed"></div>
+      </div>
+      <button class="update-btn" onclick="updateSummaries()">Update Summaries</button>
     </div>
     <div id="main">
-    <h1>Personal Assistant</h1>
-    <details style="margin-bottom:10px">
-      <summary style="cursor:pointer;user-select:none;font-size:14px;color:var(--blockquote)">Keys</summary>
-      <input id="apiKey" type="password" placeholder="API Key" />
-      <input id="kanbanApiKey" type="password" placeholder="KanbanFlow API Key (optional, for manual override)" />
-    </details>
-    <div class="tabs">
-      <button class="tab active" onclick="switchTab('chat')">Chat</button>
-      <button class="tab" onclick="switchTab('query')">Query</button>
-      <button class="tab" onclick="switchTab('explore')">Explore</button>
-      <button class="tab" onclick="switchTab('data')">Data</button>
-      <button class="tab" onclick="switchTab('kanban')">Kanban</button>
-    </div>
-    <div id="tab-chat" class="tab-content active">
+      <details style="margin-bottom:10px">
+        <summary style="cursor:pointer;user-select:none;font-size:14px;color:var(--blockquote)">API Key</summary>
+        <input id="apiKey" type="password" placeholder="API Key" />
+      </details>
       <div class="chat-section">
         <div class="section-label">Conversation About</div>
         <div class="about-box" id="aboutBox">
@@ -423,7 +162,7 @@
           <div id="contextSuggestions" class="chip-suggestions"></div>
         </div>
       </div>
-      <textarea id="message" placeholder="Message"></textarea>
+      <textarea id="message" placeholder="Continue a topic, log a decision..."></textarea>
       <div id="contextSources"></div>
       <div style="display:flex;gap:6px;align-items:center">
         <button id="sendBtn" onclick="send()" style="flex:1">Send</button>
@@ -433,63 +172,6 @@
         </label>
       </div>
       <div id="messages"></div>
-    </div>
-    <div id="tab-query" class="tab-content">
-      <fieldset>
-        <legend>Query Topic</legend>
-        <select id="qTopicCategory">
-          <option value="">Select Category</option>
-        </select>
-        <select id="qTopicName">
-          <option value="">Select Topic</option>
-        </select>
-        <textarea id="qTopicPrompt" placeholder="Prompt"></textarea>
-        <button onclick="queryTopic()">Query Topic</button>
-      </fieldset>
-      <fieldset>
-        <legend>Query Category</legend>
-        <select id="qCategoryName">
-          <option value="">Select Category</option>
-        </select>
-        <textarea id="qCategoryPrompt" placeholder="Prompt"></textarea>
-        <button onclick="queryCategory()">Query Category</button>
-      </fieldset>
-      <div id="queryResults"></div>
-    </div>
-    <div id="tab-explore" class="tab-content">
-      <div id="exploreList"></div>
-    </div>
-    <div id="tab-data" class="tab-content">
-      <fieldset>
-        <legend>Export</legend>
-        <button id="exportBtn" onclick="exportData()">Export All Data</button>
-        <div id="exportResult"></div>
-      </fieldset>
-      <fieldset>
-        <legend>Import</legend>
-        <input type="file" id="importFile" accept=".json" onchange="previewImport()" />
-        <div id="importPreview" style="font-size:13px"></div>
-        <button id="importBtn" onclick="importData()" disabled>Import</button>
-        <div id="importResult"></div>
-      </fieldset>
-    </div>
-    <div id="tab-kanban" class="tab-content">
-      <fieldset>
-          <legend>Add Task</legend>
-          <select id="kanbanColumn"><option value="">Select column</option></select>
-          <input id="kanbanTaskName" placeholder="Task name" />
-          <input id="kanbanCategory" placeholder="Category (leave empty to auto-generate)" />
-          <input id="kanbanTopic" placeholder="Topic (leave empty to auto-generate)" />
-          <button id="kanbanAddBtn" onclick="createKanbanTask()">Add Task</button>
-          <div id="kanbanCreateResult"></div>
-      </fieldset>
-      <fieldset>
-        <legend>Rundown</legend>
-        <textarea id="kanbanPrompt" placeholder="Custom prompt (optional — defaults to asking for a rundown and starting advice)">What's on my plate today and what should I prioritize?</textarea>
-        <button onclick="generateKanbanRundown()">Generate Kanban Rundown</button>
-        <div id="kanbanResults"></div>
-      </fieldset>
-    </div>
     </div>
     <script>
       const base = location.origin
@@ -765,31 +447,10 @@
         loadCategories()
       })
 
-      const kanbanApiKey = document.getElementById("kanbanApiKey")
-      const savedKanbanKey = localStorage.getItem("kanbanApiKey")
-      if (savedKanbanKey) kanbanApiKey.value = savedKanbanKey
-
-      kanbanApiKey.addEventListener("change", () => {
-        localStorage.setItem("kanbanApiKey", kanbanApiKey.value)
-        loadKanbanColumns()
-      })
-
-      const kanbanPrompt = document.getElementById("kanbanPrompt")
-      const savedKanbanPrompt = localStorage.getItem("kanbanPrompt")
-      if (savedKanbanPrompt) kanbanPrompt.value = savedKanbanPrompt
-
-      kanbanPrompt.addEventListener("change", () => {
-        localStorage.setItem("kanbanPrompt", kanbanPrompt.value)
-      })
-
-      document.getElementById("kanbanCategory").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
-      document.getElementById("kanbanTopic").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
-
       let conversations = []
       let currentConvId = null
       let currentMessages = []
 
-      /** Renders the sidebar conversation list, filtered by the search input. */
       function renderConversations() {
         const container = document.getElementById("conversations")
         const search = (document.getElementById("sidebarSearch")?.value || "").toLowerCase()
@@ -819,11 +480,6 @@
         }
       }
 
-      /**
-       * Converts a unix timestamp to a relative time string (e.g. "5m ago").
-       * @param {number} timestamp - Unix timestamp in seconds
-       * @returns {string}
-       */
       function relativeTime(timestamp) {
         const now = Math.floor(Date.now() / 1000)
         const diff = now - timestamp
@@ -835,7 +491,6 @@
         return new Date(timestamp * 1000).toLocaleDateString()
       }
 
-      /** Clears the current conversation and resets the UI to start a new one. */
       function newConversation() {
         currentConvId = null
         currentMessages = []
@@ -845,10 +500,6 @@
         renderConversations()
       }
 
-      /**
-       * Loads a conversation's messages from the server and displays them.
-       * @param {number} id - Conversation ID
-       */
       async function loadConversation(id) {
         const conv = conversations.find((c) => c.id === id)
         if (!conv) return
@@ -868,11 +519,6 @@
         renderConversations()
       }
 
-      /**
-       * Appends a message to the local messages display and the current conversation buffer.
-       * @param {"user"|"assistant"} role
-       * @param {string} text
-       */
       function addMsg(role, text) {
         const content = role === 'assistant' ? parseMarkdown(text) : text
         msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
@@ -880,7 +526,6 @@
         currentMessages.push({ role, text })
       }
 
-      /** Fetches the conversation list from the server and re-renders the sidebar. */
       async function refreshConversations() {
         const res = await req("GET", "/conversations")
         if (Array.isArray(res)) {
@@ -889,10 +534,6 @@
         }
       }
 
-      /**
-       * Deletes a conversation after user confirmation.
-       * @param {number} id - Conversation ID
-       */
       async function deleteConversation(id) {
         if (!confirm("Delete this conversation?")) return
         await req("DELETE", `/conversation?id=${id}`)
@@ -900,7 +541,6 @@
         await refreshConversations()
       }
 
-      /** Fetches available context providers (kanban-rundown, etc.) and renders checkboxes. */
       async function loadContextSources() {
         const res = await req("GET", "/context-sources")
         if (Array.isArray(res)) {
@@ -913,96 +553,30 @@
       refreshConversations()
       loadCategories()
       loadContextSources()
-      if (kanbanApiKey.value) loadKanbanColumns()
 
-      /**
-       * Sends an authenticated API request to the backend.
-       * @param {"GET"|"POST"|"DELETE"} method
-       * @param {string} path
-       * @param {object} [body] - JSON body (for POST)
-       * @returns {Promise<any>}
-       */
       async function req(method, path, body) {
         const headers = { Authorization: `Bearer ${apiKey.value}` }
         if (body) headers["Content-Type"] = "application/json"
-        const r = await fetch(base + path, {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined,
-        })
+        const r = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
         return r.json()
       }
 
-      /**
-       * Switches the active tab, pre-filling kanban fields from chat when first opened.
-       * @param {"chat"|"query"|"explore"|"kanban"} tab
-       */
-      function switchTab(tab) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'))
-        document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active')
-        document.getElementById(`tab-${tab}`).classList.add('active')
-        if (tab === 'kanban') {
-          const catInput = document.getElementById("kanbanCategory")
-          const topicInput = document.getElementById("kanbanTopic")
-          if (!catInput.value && !topicInput.value) {
-            if (aboutChipValue) {
-              catInput.value = aboutChipValue.category || ""
-              topicInput.value = aboutChipValue.topic || ""
-            }
-          }
+      function toggleExplore() {
+        const toggle = document.getElementById("exploreToggle")
+        if (toggle.classList.contains("collapsed")) {
+          toggleExplorePanel()
         }
+        document.getElementById("exploreBody").scrollIntoView({ behavior: "smooth" })
       }
 
-      /** Queries a specific topic by name with a custom prompt. */
-      async function queryTopic() {
-        const category = document.getElementById('qTopicCategory').value
-        const topic = document.getElementById('qTopicName').value
-        const prompt = document.getElementById('qTopicPrompt').value
-        if (!category || !topic || !prompt) return alert('Fill all fields')
-        document.getElementById('queryResults').innerHTML = '<div class="msg">Loading...</div>'
-        const res = await req('POST', '/query-topic', { category, topic, prompt })
-        document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Topic: ${topic}</b><br>${parseMarkdown(res.response || res.error)}</div>`
-      }
-
-      /** Queries all topics in a category with a custom prompt. */
-      async function queryCategory() {
-        const category = document.getElementById('qCategoryName').value
-        const prompt = document.getElementById('qCategoryPrompt').value
-        if (!category || !prompt) return alert('Fill all fields')
-        document.getElementById('queryResults').innerHTML = '<div class="msg">Loading...</div>'
-        const res = await req('POST', '/query-category', { category, prompt })
-        document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Category: ${category}</b><br>${parseMarkdown(res.response || res.error)}</div>`
-      }
-
-      /**
-       * Escapes HTML special characters in a string.
-       * @param {string} text
-       * @returns {string}
-       */
-      function escapeHtml(text) {
-        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-      }
-
-      /**
-       * Converts basic markdown text to safe HTML.
-       * @param {string} text
-       * @returns {string}
-       */
-      function parseMarkdown(text) {
-        text = escapeHtml(text)
-        text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-        text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
-        text = text.replace(/`(.+?)`/g, '<code>$1</code>')
-        text = text.replace(/^\* (.+)$/gm, '<li>$1</li>')
-        text = text.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>')
-        text = text.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-        text = text.replace(/\n/g, '<br>')
-        return text
+      function toggleExplorePanel() {
+        const toggle = document.getElementById("exploreToggle")
+        const body = document.getElementById("exploreBody")
+        toggle.classList.toggle("collapsed")
+        body.classList.toggle("collapsed")
+        if (!body.classList.contains("collapsed") && !body.children.length) {
+          renderExplore()
+        }
       }
 
       function toggleCategory(el) {
@@ -1015,10 +589,6 @@
         el.nextElementSibling.classList.toggle('collapsed');
       }
 
-      /**
-       * Returns the names of all checked context source checkboxes.
-       * @returns {string[]}
-       */
       function getSelectedContextSources() {
         return [...document.querySelectorAll("#contextSources input:checked")].map(cb => cb.value)
       }
@@ -1028,7 +598,6 @@
         btn.textContent = document.getElementById("noteMode").checked ? "Save Note" : "Send"
       }
 
-      /** Sends a chat message. Auto-generates category/topic if empty with a confirm step. */
       async function send() {
         const btn = document.getElementById("sendBtn")
         if (!apiKey.value || !message.value) return alert("Fill API key and message")
@@ -1067,9 +636,8 @@
 
       let categoriesData = []
 
-      /** Renders the collapsible explore view from cached categories data. */
       function renderExplore() {
-        const container = document.getElementById("exploreList")
+        const container = document.getElementById("exploreBody")
         container.innerHTML = categoriesData
           .map(c => `
             <div class="cat-item">
@@ -1097,189 +665,45 @@
           `).join("")
       }
 
-      /** Fetches all categories and topics from the server and updates all related UI. */
       async function loadCategories() {
         const res = await req("GET", "/categories")
         categoriesData = res
         autocompleteOptions = buildAutocompleteOptions()
-        
-        const qTopicCat = document.getElementById("qTopicCategory")
-        const qTopicName = document.getElementById("qTopicName")
-        const qCatName = document.getElementById("qCategoryName")
-        qTopicCat.innerHTML = '<option value="">Select Category</option>' + res.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
-        qCatName.innerHTML = '<option value="">Select Category</option>' + res.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
-        qTopicName.innerHTML = '<option value="">Select Topic</option>'
-        
         renderExplore()
       }
 
-      document.getElementById("qTopicCategory")?.addEventListener("change", function() {
-        const cat = categoriesData.find(c => c.name === this.value)
-        const qTopicName = document.getElementById("qTopicName")
-        qTopicName.innerHTML = '<option value="">Select Topic</option>' + (cat ? cat.topics.map(t => `<option value="${t.name}">${t.name}</option>`).join("") : "")
-      })
-
-
-
-      /** Triggers a manual summary update on the server, then reloads categories. */
       async function updateSummaries() {
-        switchTab('explore')
-        document.getElementById('exploreList').innerHTML = 'Updating summaries...'
+        const body = document.getElementById("exploreBody")
+        body.innerHTML = 'Updating summaries...'
+        const toggle = document.getElementById("exploreToggle")
+        toggle.classList.remove("collapsed")
+        body.classList.remove("collapsed")
         const res = await req("POST", "/update-summaries")
         if (res.success) {
           loadCategories()
         } else {
-          document.getElementById('exploreList').innerHTML = `Error: ${res.error}`
+          body.innerHTML = `Error: ${res.error}`
         }
       }
 
-      let kanbanColumns = []
-
-      /** Fetches kanban board columns and populates the column selector. */
-      async function loadKanbanColumns() {
-        const select = document.getElementById("kanbanColumn")
-        select.innerHTML = '<option value="">Loading...</option>'
-        const res = await req("POST", "/kanban-board", { kanbanApiKey: kanbanApiKey.value })
-        if (res.columns) {
-          kanbanColumns = res.columns
-          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("")
-        } else {
-          select.innerHTML = '<option value="">Failed to load columns</option>'
-        }
+      function escapeHtml(text) {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       }
 
-      /** Creates a kanban task. Auto-generates category/topic if empty with a confirm step. */
-      async function createKanbanTask() {
-        const column = document.getElementById("kanbanColumn").value
-        const taskName = document.getElementById("kanbanTaskName").value
-        const catInput = document.getElementById("kanbanCategory")
-        const topicInput = document.getElementById("kanbanTopic")
-        const btn = document.getElementById("kanbanAddBtn")
-        const result = document.getElementById("kanbanCreateResult")
-        if (!column || !taskName) return alert("Select a column and enter a task name")
-
-        const needSuggest = !catInput.value.trim() || !topicInput.value.trim()
-        if (needSuggest) {
-          result.innerHTML = "Generating category/topic..."
-          btn.disabled = true
-          const suggest = await req("POST", "/kanban-suggest-category", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column })
-          btn.disabled = false
-          if (suggest.category) catInput.value = suggest.category
-          if (suggest.topic) topicInput.value = suggest.topic
-          result.innerHTML = `<div class="msg" style="font-size:13px;opacity:0.8">Auto-filled: <b>${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</b> — review and click Add Task again to confirm.</div>`
-          btn.textContent = "Confirm Add Task"
-          return
-        }
-
-        btn.textContent = "Add Task"
-        result.innerHTML = "Creating..."
-        btn.disabled = true
-        const res = await req("POST", "/kanban-create-task", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column, category: catInput.value.trim(), topic: topicInput.value.trim() })
-        btn.disabled = false
-        if (res.success) {
-          result.innerHTML = `<div class="msg assistant">Task "<b>${escapeHtml(res.taskName)}</b>" created in ${escapeHtml(res.columnName)}<br><span style="opacity:0.7;font-size:12px">Stored under ${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</span></div>`
-          document.getElementById("kanbanTaskName").value = ""
-        } else {
-          result.innerHTML = `<div class="msg" style="color:red">Error: ${res.error}</div>`
-        }
-      }
-
-      /** Generates an AI rundown of the kanban board with the current tasks. */
-      async function generateKanbanRundown() {
-        document.getElementById("kanbanResults").innerHTML = '<div class="msg">Generating rundown...</div>'
-        const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value, customPrompt: kanbanPrompt.value || undefined })
-        document.getElementById("kanbanResults").innerHTML = `<div class="msg assistant">${parseMarkdown(res.response || res.error)}</div>`
-      }
-
-      /**
-       * Exports all data by calling /export and triggers a JSON file download.
-       * Uses the API key from the input field for authentication.
-       * @returns {Promise<void>}
-       */
-      async function exportData() {
-        const btn = document.getElementById("exportBtn")
-        const result = document.getElementById("exportResult")
-        btn.disabled = true
-        btn.textContent = "Exporting..."
-        result.innerHTML = '<div class="msg">Exporting all data...</div>'
-        try {
-          const res = await req("POST", "/export")
-          const blob = new Blob([JSON.stringify(res, null, 2)], { type: "application/json" })
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement("a")
-          a.href = url
-          a.download = `personal-assistant-${new Date().toISOString().slice(0, 10)}.json`
-          a.click()
-          URL.revokeObjectURL(url)
-          result.innerHTML = `<div class="msg assistant">Exported ${res.categories?.length || 0} categories</div>`
-        } catch (err) {
-          result.innerHTML = `<div class="msg" style="color:red">Error: ${err.message}</div>`
-        }
-        btn.disabled = false
-        btn.textContent = "Export All Data"
-      }
-
-      /**
-       * Reads the selected JSON import file, validates its structure, and shows a preview
-       * of categories/topics/conversations counts. Enables the Import button on success.
-       * @returns {Promise<void>}
-       */
-      async function previewImport() {
-        const fileInput = document.getElementById("importFile")
-        const preview = document.getElementById("importPreview")
-        const importBtn = document.getElementById("importBtn")
-        const file = fileInput.files?.[0]
-        if (!file) {
-          importBtn.disabled = true
-          preview.innerHTML = ""
-          return
-        }
-        try {
-          const text = await file.text()
-          const data = JSON.parse(text)
-          if (!data.categories) throw new Error("Invalid format: missing categories array")
-          const catCount = data.categories.length
-          const topicCount = data.categories.reduce((s, c) => s + (c.topics?.length || 0), 0)
-          const convCount = data.categories.reduce((s, c) => s + c.topics.reduce((s2, t) => s2 + (t.conversations?.length || 0), 0), 0)
-          preview.innerHTML = `<span>Found <b>${catCount}</b> categories, <b>${topicCount}</b> topics, <b>${convCount}</b> conversations. Existing items will be preserved, new ones added.</span>`
-          importBtn.disabled = false
-        } catch (err) {
-          preview.innerHTML = `<span style="color:red">Invalid file: ${err.message}</span>`
-          importBtn.disabled = true
-        }
-      }
-
-      /**
-       * Reads the selected JSON file and sends it to /import. Displays imported counts
-       * and any conflicts (items skipped because they already exist). Refreshes categories
-       * and conversations on success.
-       * @returns {Promise<void>}
-       */
-      async function importData() {
-        const fileInput = document.getElementById("importFile")
-        const result = document.getElementById("importResult")
-        const importBtn = document.getElementById("importBtn")
-        const file = fileInput.files?.[0]
-        if (!file) return
-        importBtn.disabled = true
-        importBtn.textContent = "Importing..."
-        result.innerHTML = '<div class="msg">Importing data...</div>'
-        try {
-          const text = await file.text()
-          const data = JSON.parse(text)
-          const res = await req("POST", "/import", { data })
-          const imported = res.imported || {}
-          const conflicts = res.conflicts || {}
-          const conflictItems = [...(conflicts.categories || []), ...(conflicts.topics || [])]
-          const conflictItemsEscaped = conflictItems.map(i => escapeHtml(String(i))).join(", ")
-          result.innerHTML = `<div class="msg assistant">Imported: ${imported.categories || 0} categories, ${imported.topics || 0} topics, ${imported.conversations || 0} conversations${conflictItems.length ? `<br><span style="opacity:0.7;font-size:13px">Skipped (already exist): ${conflictItemsEscaped}</span>` : ""}</div>`
-          loadCategories()
-          refreshConversations()
-        } catch (err) {
-          result.innerHTML = `<div class="msg" style="color:red">Error: ${err.message}</div>`
-        }
-        importBtn.disabled = false
-        importBtn.textContent = "Import"
+      function parseMarkdown(text) {
+        text = escapeHtml(text)
+        text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+        text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
+        text = text.replace(/`(.+?)`/g, '<code>$1</code>')
+        text = text.replace(/^\* (.+)$/gm, '<li>$1</li>')
+        text = text.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>')
+        text = text.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+        text = text.replace(/\n/g, '<br>')
+        return text
       }
     </script>
   </body>
