@@ -22,6 +22,12 @@
 			"tag": "v2"
 		}
 	],
+	"services": [
+		{
+			"binding": "SCRAPER",
+			"service": "kanbanflow-scraper"
+		}
+	],
 	"ai": {
 		"binding": "AI"
 	},

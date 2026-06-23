@@ -219,14 +219,14 @@ export class AssistantDurableObject extends DurableObject {
       }
       if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
 
-      const kanbanKey = this.env.KANBANFLOW_API_KEY;
-      const allowTaskCreation = kanbanKey && contextSources.includes("kanban-create");
+      const scraperAvailable = this.env.SCRAPER;
+      const allowTaskCreation = this.env.KANBANFLOW_API_KEY && contextSources.includes("kanban-create");
       let modifiedMessage = assistantMessage;
       let boardColumnsCache = null;
       const getColumnId = async (colName) => {
         if (!boardColumnsCache) {
-          const board = await this.#fetchKanban(kanbanKey, "/board");
-          boardColumnsCache = board.columns;
+          const bootstrap = await this.#scraper();
+          boardColumnsCache = bootstrap.columns;
         }
         const column = boardColumnsCache.find(c => c.name === colName);
         if (!column) throw new Error(`Column not found: ${colName}`);
@@ -247,7 +247,7 @@ export class AssistantDurableObject extends DurableObject {
         if (allowTaskCreation && taskName) {
           try {
             const columnId = columnName ? await getColumnId(columnName) : undefined;
-            await this.createKanbanTask(kanbanKey, taskName, columnId, description);
+            await this.createKanbanTask(taskName, columnId, description);
             modifiedMessage = modifiedMessage.replace(blockMatch[0], `Task created: "${taskName}"${columnName ? ` in ${columnName}` : ""}`);
           } catch (err) {
             modifiedMessage = modifiedMessage.replace(blockMatch[0], `Failed to create task "${taskName}": ${err.message}`);
@@ -264,7 +264,7 @@ export class AssistantDurableObject extends DurableObject {
           if (allowTaskCreation && taskName && columnName) {
             try {
               const columnId = await getColumnId(columnName);
-              await this.createKanbanTask(kanbanKey, taskName, columnId);
+              await this.createKanbanTask(taskName, columnId);
               modifiedMessage = modifiedMessage.replace(inlineMatch[0], `Task created: "${taskName}" in ${columnName}`);
             } catch (err) {
               modifiedMessage = modifiedMessage.replace(inlineMatch[0], `Failed to create task "${taskName}": ${err.message}`);
@@ -426,6 +426,37 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
+   * Updates or clears a summary for a category or topic. Empty summary = forget.
+   * @param {"category"|"topic"} type
+   * @param {number} id
+   * @param {string} summary - new summary text, or empty string to clear
+   * @returns {{success: boolean}}
+   */
+  updateSummary(type, id, summary) {
+    const stage = "updateSummary";
+    try {
+      if (!["category", "topic"].includes(type))
+        throw new Error(`[${stage}] Invalid type: ${type}`);
+      if (typeof id !== "number" || id <= 0)
+        throw new Error(`[${stage}] Invalid id: ${id}`);
+
+      const table = type === "category" ? "categories" : "topics";
+      this.#db.exec(
+        `UPDATE ${table} SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
+        summary, id
+      );
+      const updated = this.#db.exec(`SELECT changes() AS count`).one().count;
+      if (!updated) throw new Error(`[${stage}] ${type} not found: ${id}`);
+
+      console.log(`[INFO][${stage}] ${type} summary updated: id=${id}`);
+      return { success: true };
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
    * Updates all summaries incrementally. Iterates through all topics and categories,
    * processing only new conversations since last summary update.
    * @returns {Promise<void>}
@@ -454,17 +485,28 @@ export class AssistantDurableObject extends DurableObject {
    * Returns all conversations with category, topic, timestamp, and last message preview, ordered by most recent.
    * @returns {Promise<Array<{id: number, category: string, topic: string, created_at: number, last_message: string}>>}
    */
-  async listConversations() {
+  async listConversations(category, topic) {
     const stage = "listConversations";
     try {
-      const rows = [...this.#db.exec(`
+      let sql = `
         SELECT c.id, c.created_at_timestamp, c.last_message, c.context_categories, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
-        ORDER BY c.created_at_timestamp DESC
-        LIMIT 50
-      `).toArray()];
+      `;
+      const params = [];
+      const conditions = [];
+      if (category?.trim()) {
+        conditions.push(`cat.name = ?`);
+        params.push(category.trim());
+      }
+      if (topic?.trim()) {
+        conditions.push(`t.name = ?`);
+        params.push(topic.trim());
+      }
+      if (conditions.length) sql += `WHERE ${conditions.join(" AND ")} `;
+      sql += `ORDER BY c.created_at_timestamp DESC LIMIT 50`;
+      const rows = [...this.#db.exec(sql, ...params).toArray()];
       const result = rows.map(r => {
         let contextCategories = [];
         try { contextCategories = JSON.parse(r.context_categories || '[]'); } catch {}
@@ -526,13 +568,12 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
-  #fetchKanban(apiKey, path) {
-    return fetch(`https://kanbanflow.com/api/v1${path}`, {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    }).then(res => {
-      if (!res.ok) throw new Error(`KanbanFlow API error: ${res.status} ${res.statusText}`);
+  #scraper() {
+    if (!this.env.SCRAPER) throw new Error("SCRAPER service binding not configured");
+    return this.env.SCRAPER.fetch("http://internal/").then(res => {
+      if (!res.ok) throw new Error(`Scraper error: ${res.status} ${res.statusText}`);
       return res.json();
-    });
+    }).then(data => data.tasks);
   }
 
   /**
@@ -540,12 +581,12 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} kanbanApiKey
    * @returns {Promise<{columns: Array<{name: string, uniqueId: string}>, name: string}>}
    */
-  async getKanbanBoard(kanbanApiKey) {
+  async getKanbanBoard() {
     const stage = "getKanbanBoard";
     try {
-      const board = await this.#fetchKanban(kanbanApiKey, "/board");
-      console.log(`[INFO][${stage}] Board fetched: ${board.name}, columns=${board.columns.length}`);
-      return { columns: board.columns, name: board.name };
+      const bootstrap = await this.#scraper();
+      console.log(`[INFO][${stage}] Board fetched: ${bootstrap.boardName}, columns=${bootstrap.columns.length}`);
+      return { name: bootstrap.boardName, columns: bootstrap.columns };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -560,22 +601,21 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} [description]
    * @returns {Promise<{success: boolean, taskId: string, taskName: string}>}
    */
-  async createKanbanTask(kanbanApiKey, taskName, columnId, description) {
+  async createKanbanTask(taskName, columnId, description) {
     const stage = "createKanbanTask";
     try {
+      const key = this.env.KANBANFLOW_API_KEY;
+      if (!key) throw new Error("KANBANFLOW_API_KEY not configured for task creation");
       const body = { name: taskName };
       if (columnId?.trim()) body.columnId = columnId.trim();
       if (description?.trim()) body.description = description.trim();
-
       const res = await fetch("https://kanbanflow.com/api/v1/tasks", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${kanbanApiKey}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body: JSON.stringify(body)
       });
-
       if (!res.ok) throw new Error(`KanbanFlow create task error: ${res.status} ${res.statusText}`);
       const result = await res.json();
-
       console.log(`[INFO][${stage}] Task created: ${taskName}${columnId ? ` in column ${columnId}` : ""}`);
       return { success: true, taskId: result.taskId, taskName };
     } catch (err) {
@@ -584,31 +624,27 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
-  #fetchAndFormatKanbanTasks(kanbanApiKey) {
-    return Promise.all([
-      this.#fetchKanban(kanbanApiKey, "/tasks"),
-      this.#fetchKanban(kanbanApiKey, "/board")
-    ]).then(([tasksData, board]) => {
-      const columnMap = {};
-      board.columns.forEach(c => { columnMap[c.uniqueId] = c.name; });
+  async #fetchAndFormatKanbanTasks() {
+    const bootstrap = await this.#scraper();
+    const columnMap = {};
+    bootstrap.columns.forEach(c => { columnMap[c.uniqueId] = c.name; });
 
-      const tasksByColumn = {};
-      tasksData.forEach(group => {
-        const colName = group.columnName || columnMap[group.columnId] || "Unknown";
-        if (!tasksByColumn[colName]) tasksByColumn[colName] = [];
-        (group.tasks || []).forEach(task => {
-          const subtasks = task.subTasks?.length
-            ? `\n  Subtasks: ${task.subTasks.map(s => `${s.name}${s.finished ? ' [done]' : ''}`).join(', ')}`
-            : '';
-          const color = task.color ? ` [${task.color}]` : '';
-          tasksByColumn[colName].push(`- ${task.name}${color}${subtasks}`);
-        });
+    const tasksByColumn = {};
+    (bootstrap.taskSections || []).forEach(section => {
+      const colName = columnMap[section.info?.columnId] || "Unknown";
+      if (!tasksByColumn[colName]) tasksByColumn[colName] = [];
+      (section.tasks || []).forEach(task => {
+        const subtasks = task.subTasks?.length
+          ? `\n  Subtasks: ${task.subTasks.map(s => `${s.name}${s.finished ? ' [done]' : ''}`).join(', ')}`
+          : '';
+        const color = task.color ? ` [${task.color}]` : '';
+        tasksByColumn[colName].push(`- ${task.name}${color}${subtasks}`);
       });
-
-      return Object.entries(tasksByColumn)
-        .map(([col, tasks]) => `### ${col}\n${tasks.join('\n')}`)
-        .join('\n\n');
     });
+
+    return Object.entries(tasksByColumn)
+      .map(([col, tasks]) => `### ${col}\n${tasks.join('\n')}`)
+      .join('\n\n');
   }
 
   /**
@@ -616,10 +652,10 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} kanbanApiKey
    * @returns {Promise<{tasks: string}>}
    */
-  async getKanbanTasks(kanbanApiKey) {
+  async getKanbanTasks() {
     const stage = "getKanbanTasks";
     try {
-      const tasks = await this.#fetchAndFormatKanbanTasks(kanbanApiKey);
+      const tasks = await this.#fetchAndFormatKanbanTasks();
       console.log(`[INFO][${stage}] Tasks formatted`);
       return { tasks: tasks || "No tasks found." };
     } catch (err) {
@@ -635,10 +671,10 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} [customPrompt]
    * @returns {Promise<{response: string}>}
    */
-  async generateKanbanRundown(kanbanApiKey, customPrompt) {
+  async generateKanbanRundown(customPrompt) {
     const stage = "generateKanbanRundown";
     try {
-      const taskReport = await this.#fetchAndFormatKanbanTasks(kanbanApiKey);
+      const taskReport = await this.#fetchAndFormatKanbanTasks();
 
       if (!taskReport.trim()) {
         return { response: "No tasks found on your KanbanFlow board." };
@@ -757,16 +793,15 @@ export default {
       const stub = env.ASSISTANT_DO.get(id);
 
       if (event.cron === "0 11 * * *") {
-        const kanbanApiKey = env.KANBANFLOW_API_KEY;
-        if (kanbanApiKey) {
-          const result = await stub.generateKanbanRundown(kanbanApiKey);
+        if (env.SCRAPER) {
+          const result = await stub.generateKanbanRundown();
           const today = new Date().toISOString().split("T")[0];
           await stub.storeConversationMessage("Kanban", today, [
             { role: "assistant", content: result.response }
           ]);
           console.log(`[INFO][${stage}] Scheduled kanban rundown stored in Kanban/${today}`);
         } else {
-          console.log(`[INFO][${stage}] Skipping kanban rundown: KANBANFLOW_API_KEY not set`);
+          console.log(`[INFO][${stage}] Skipping kanban rundown: SCRAPER service not configured`);
         }
       } else {
         await stub.updateAllSummaries();
@@ -824,8 +859,10 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/conversations") {
-        console.log(`[INFO][${stage}] Listing conversations`);
-        const result = await stub.listConversations();
+        const category = url.searchParams.get("category");
+        const topic = url.searchParams.get("topic");
+        console.log(`[INFO][${stage}] Listing conversations${category ? ` category=${category}` : ""}${topic ? ` topic=${topic}` : ""}`);
+        const result = await stub.listConversations(category, topic);
         return Response.json(result);
       }
 
@@ -867,6 +904,18 @@ export default {
           return Response.json({ error: "message is required" }, { status: 400 });
 
         const result = await stub.suggestCategory(body.message.trim());
+        return Response.json(result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/update-summary") {
+        let body;
+        try { body = await request.json(); } catch {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        if (!["category", "topic"].includes(body?.type) || typeof body?.id !== "number" || typeof body?.summary !== "string")
+          return Response.json({ error: "type, id, and summary are required" }, { status: 400 });
+
+        const result = stub.updateSummary(body.type, body.id, body.summary);
         return Response.json(result);
       }
 
