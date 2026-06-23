@@ -22,6 +22,12 @@
 			"tag": "v2"
 		}
 	],
+	"services": [
+		{
+			"binding": "SCRAPER",
+			"service": "kanbanflow-scraper"
+		}
+	],
 	"ai": {
 		"binding": "AI"
 	},
@@ -32,7 +38,7 @@
 		]
 	},
 	"vars": {
-		"AI_MODEL": "@cf/moonshotai/kimi-k2.6",
+		"AI_MODEL": "@cf/zai-org/glm-5.2",
 		"AI_SYSTEM_INSTRUCTION": "Your client values succinct and direct outputs without extra formatting, warnings, and politeness."
 	},
 	"observability": {

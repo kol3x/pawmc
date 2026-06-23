@@ -24,23 +24,20 @@ export function list() {
 }
 
 define("kanban-rundown", async (env, doInstance) => {
-  const key = env.KANBANFLOW_API_KEY;
-  if (!key) return "";
-  const { response } = await doInstance.generateKanbanRundown(key);
+  if (!env.SCRAPER) return "";
+  const { response } = await doInstance.generateKanbanRundown();
   return `## Kanban Rundown\n${response}`;
 });
 
 define("kanban-tasks", async (env, doInstance) => {
-  const key = env.KANBANFLOW_API_KEY;
-  if (!key) return "";
-  const { tasks } = await doInstance.getKanbanTasks(key);
+  if (!env.SCRAPER) return "";
+  const { tasks } = await doInstance.getKanbanTasks();
   return `## Current Kanban Tasks\n${tasks}`;
 });
 
 define("kanban-create", async (env, doInstance) => {
-  const key = env.KANBANFLOW_API_KEY;
-  if (!key) return "";
-  const { columns } = await doInstance.getKanbanBoard(key);
+  if (!env.SCRAPER) return "";
+  const { columns } = await doInstance.getKanbanBoard();
   const columnNames = columns.map(c => c.name).join(", ");
   return [
     "## Available Actions",

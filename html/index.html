@@ -1,881 +1,1426 @@
-<!doctype html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Personal Assistant</title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      :root {
-        --bg: #fff;
-        --text: #333;
-        --border: #ccc;
-        --input-bg: #fff;
-        --user: #4da3ff;
-        --code-bg: #f4f4f4;
-        --code-text: #333;
-        --blockquote: #666;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #1a1a1a;
-          --text: #e0e0e0;
-          --border: #444;
-          --input-bg: #2a2a2a;
-          --user: #4da3ff;
-          --code-bg: #2a2a2a;
-          --code-text: #e0e0e0;
-          --blockquote: #999;
-        }
-      }
-      body {
-        font-family: system-ui;
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 20px;
-        background: var(--bg);
-        color: var(--text);
-      }
-      input,
-      select,
-      button,
-      textarea {
-        width: 100%;
-        padding: 8px;
-        margin: 4px 0;
-        background: var(--input-bg);
-        color: var(--text);
-        border: 1px solid var(--border);
-      }
-      textarea {
-        height: 80px;
-        resize: none;
-      }
-      #messages {
-        height: 500px;
-        overflow-y: auto;
-        border: 1px solid var(--border);
-        padding: 10px;
-        margin: 10px 0;
-        background: var(--bg);
-      }
-      .msg {
-        margin: 8px 0;
-        line-height: 1.5;
-      }
-      .msg.user {
-        color: var(--user);
-      }
-      .msg.assistant {
-        color: var(--text);
-      }
-      .msg.assistant p { margin: 0.5em 0; }
-      .msg.assistant code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
-      .msg.assistant pre { background: var(--code-bg); padding: 10px; border-radius: 5px; overflow-x: auto; }
-      .msg.assistant pre code { background: none; padding: 0; }
-      .msg.assistant ul, .msg.assistant ol { padding-left: 20px; }
-      .msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { margin-top: 0.5em; }
-      .msg.assistant blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
-      #sidebar {
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 280px;
-        height: 100%;
-        background: var(--input-bg);
-        border-right: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
-        z-index: 10;
-      }
-      #main { margin-left: 290px; max-width: 900px; }
-      .sidebar-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 16px;
-        border-bottom: 1px solid var(--border);
-      }
-      .sidebar-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
-      .sidebar-actions { display: flex; gap: 6px; }
-      .sidebar-actions button {
-        width: 32px; height: 32px; padding: 0;
-        display: flex; align-items: center; justify-content: center;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--input-bg);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 18px;
-        line-height: 1;
-      }
-      .sidebar-actions button:hover { background: var(--code-bg); }
-      #sidebarSearch {
-        margin: 8px 12px; padding: 8px 12px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--bg);
-        color: var(--text);
-        font-size: 13px;
-        width: auto;
-      }
-      #sidebarSearch::placeholder { color: var(--blockquote); }
-      #conversations {
-        flex: 1;
-        overflow-y: auto;
-        padding: 4px 8px;
-      }
-      .conv-item {
-        display: block;
-        width: 100%;
-        padding: 10px 12px;
-        cursor: pointer;
-        border-radius: 8px;
-        margin: 2px 0;
-        text-align: left;
-        border: none;
-        background: transparent;
-        color: var(--text);
-        transition: background 0.15s;
-      }
-      .conv-item:hover { background: var(--code-bg); }
-      .conv-item.active { background: var(--user); color: #fff; }
-      .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
-      .conv-title {
-        font-weight: 600;
-        font-size: 13px;
-        margin-bottom: 2px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .conv-preview {
-        font-size: 12px;
-        opacity: 0.7;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .conv-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 4px;
-      }
-      .conv-time { font-size: 11px; opacity: 0.5; }
-      .conv-delete {
-        opacity: 0;
-        background: none;
-        border: none;
-        color: inherit;
-        cursor: pointer;
-        padding: 2px 4px;
-        border-radius: 4px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .conv-item:hover .conv-delete { opacity: 0.5; }
-      .conv-delete:hover { opacity: 1 !important; background: rgba(255,0,0,0.15); }
-      .conv-item.active .conv-delete:hover { background: rgba(255,255,255,0.2); }
-      .update-btn {
-        margin: 8px 12px;
-        padding: 8px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--input-bg);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 12px;
-        flex-shrink: 0;
-        width: calc(100% - 24px);
-        white-space: nowrap;
-      }
-      .update-btn:hover { background: var(--code-bg); }
-      #contextSources { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0; }
-      #contextSources label { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; user-select: none; }
-      #contextSources input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
-      .tabs { display: flex; gap: 10px; margin-bottom: 10px; }
-      .tab { padding: 10px 20px; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); }
-      .tab.active { background: var(--user); color: #fff; }
-      .tab-content { display: none; }
-      .tab-content.active { display: block; }
-      fieldset { border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin: 10px 0; }
-      legend { font-weight: bold; padding: 0 5px; }
-      .cat-item { border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin: 10px 0; }
-      .cat-name { font-weight: bold; font-size: 1.1em; }
-      .cat-summary { margin: 5px 0; color: var(--blockquote); }
-      .cat-summary p { margin: 0.5em 0; }
-      .cat-summary code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
-      .cat-summary pre { background: var(--code-bg); padding: 10px; border-radius: 5px; overflow-x: auto; }
-      .cat-summary pre code { background: none; padding: 0; }
-      .cat-summary ul, .cat-summary ol { padding-left: 20px; }
-      .cat-summary h1, .cat-summary h2, .cat-summary h3 { margin-top: 0.5em; }
-      .cat-summary blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
-      .topic-item { margin: 5px 0 5px 15px; }
-      .topic-name { font-weight: bold; }
-      .topic-summary { color: var(--blockquote); font-size: 0.9em; }
-      .topic-summary p { margin: 0.5em 0; }
-      .topic-summary code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 3px; }
-      .topic-summary pre { background: var(--code-bg); padding: 10px; border-radius: 5px; overflow-x: auto; }
-      .topic-summary pre code { background: none; padding: 0; }
-      .topic-summary ul, .topic-summary ol { padding-left: 20px; }
-      .topic-summary h1, .topic-summary h2, .topic-summary h3 { margin-top: 0.5em; }
-      .topic-summary blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--blockquote); }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assistant</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      /* Collapsible Explore Tab */
-      .cat-header, .topic-header { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--input-bg); border-radius: 6px; user-select: none; margin-bottom: 4px; }
-      .cat-header:hover, .topic-header:hover { background: var(--code-bg); }
-      .cat-header .icon, .topic-header .icon { font-weight: bold; font-family: monospace; }
-      .cat-header .cat-title, .topic-header .topic-title { flex: 1; font-weight: bold; }
-      .cat-header .chevron, .topic-header .chevron { font-size: 0.8em; transition: transform 0.2s; color: var(--blockquote); }
-      .cat-header.collapsed .chevron, .topic-header.collapsed .chevron { transform: rotate(-90deg); }
-      .cat-body, .topic-body { padding: 10px 10px 10px 20px; border-left: 2px solid var(--border); margin-left: 12px; }
-      .cat-body.collapsed, .topic-body.collapsed { display: none; }
-      .topic-header { font-size: 0.9em; padding: 8px; background: transparent; }
-      .topic-header:hover { background: var(--code-bg); }
-      .cat-item { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden; }
-    </style>
-  </head>
-  <body>
-    <div id="sidebar">
-      <div class="sidebar-header">
-        <h3>Conversations</h3>
-        <div class="sidebar-actions">
-          <button onclick="newConversation()" title="New conversation">+</button>
+    :root {
+      --bg: #0f0f11;
+      --surface: #18181b;
+      --surface2: #222226;
+      --border: #2e2e34;
+      --text: #e4e4e7;
+      --text-muted: #71717a;
+      --text-dim: #52525b;
+      --accent: #7c6af7;
+      --accent-hover: #6c5ce7;
+      --accent-muted: #2d2755;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --orange: #f97316;
+      --radius: 8px;
+      --radius-sm: 5px;
+      --transition: 150ms ease;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Auth overlay ── */
+    #auth-overlay {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    .auth-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      width: 340px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .auth-card h2 { font-size: 18px; font-weight: 600; }
+    .auth-card p { color: var(--text-muted); font-size: 13px; }
+    .auth-card input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+      width: 100%;
+      outline: none;
+    }
+    .auth-card input:focus { border-color: var(--accent); }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .logo { font-weight: 700; font-size: 15px; color: var(--accent); letter-spacing: -0.3px; }
+
+    .topic-picker {
+      flex: 1;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      cursor: pointer;
+      transition: border-color var(--transition);
+      min-width: 0;
+    }
+    .topic-picker:hover { border-color: var(--accent); }
+    .topic-picker .label {
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 13px;
+    }
+    .topic-picker .label.placeholder { color: var(--text-muted); }
+    .topic-picker svg { flex-shrink: 0; color: var(--text-dim); }
+
+    .header-actions { display: flex; gap: 6px; }
+    .icon-btn {
+      background: none; border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all var(--transition);
+      position: relative;
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--border); background: var(--surface2); }
+    .icon-btn[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute; top: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%);
+      background: #333; color: var(--text);
+      font-size: 11px; white-space: nowrap;
+      padding: 3px 7px; border-radius: 4px;
+      pointer-events: none; opacity: 0;
+      transition: opacity var(--transition);
+      z-index: 50;
+    }
+    .icon-btn[data-tooltip]:hover::after { opacity: 1; }
+
+    /* ── Main layout ── */
+    .main {
+      flex: 1; display: flex; min-height: 0;
+    }
+
+    /* ── Sidebar / Browse panel ── */
+    #sidebar {
+      width: 260px; flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      transition: transform var(--transition), opacity var(--transition);
+    }
+    #sidebar.hidden { display: none; }
+    .sidebar-header {
+      padding: 12px 14px 10px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-header h3 { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .sidebar-search {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-search input {
+      width: 100%; background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text); padding: 5px 8px;
+      font-size: 12px; outline: none;
+    }
+    .sidebar-search input:focus { border-color: var(--accent); }
+    .sidebar-list {
+      flex: 1; overflow-y: auto;
+      padding: 6px 0;
+    }
+    .sidebar-list::-webkit-scrollbar { width: 4px; }
+    .sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .cat-group { }
+    .cat-header {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: 12px; font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      user-select: none;
+    }
+    .cat-header:hover { color: var(--text); }
+    .cat-header svg { flex-shrink: 0; transition: transform var(--transition); }
+    .cat-header.collapsed svg { transform: rotate(-90deg); }
+
+    .topic-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 14px 5px 28px;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      margin: 0 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      transition: all var(--transition);
+      position: relative;
+    }
+    .topic-item:hover { background: var(--surface2); color: var(--text); }
+    .topic-item.active { background: var(--accent-muted); color: var(--accent); font-weight: 500; }
+    .freshness-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+    .fresh-high { background: var(--green); }
+    .fresh-mid  { background: var(--yellow); }
+    .fresh-low  { background: var(--orange); }
+    .fresh-none { background: var(--text-dim); }
+
+    .sidebar-footer {
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+
+    /* ── Chat area ── */
+    .chat-area {
+      flex: 1; display: flex; flex-direction: column; min-width: 0;
+    }
+
+    /* ── Context preview ── */
+    #context-preview {
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .context-toggle {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 16px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px; color: var(--text-muted);
+    }
+    .context-toggle:hover { color: var(--text); }
+    .context-toggle .chevron { transition: transform var(--transition); }
+    .context-toggle .chevron.open { transform: rotate(180deg); }
+
+    .context-body {
+      padding: 0 16px 12px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .context-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+    .context-card-header {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 6px;
+    }
+    .context-card-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .context-card-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .meta-tag {
+      font-size: 10px; color: var(--text-dim);
+      background: var(--surface2); border-radius: 3px;
+      padding: 1px 5px;
+    }
+    .context-text {
+      font-size: 13px; color: var(--text-muted); line-height: 1.5;
+    }
+    .context-empty { font-size: 12px; color: var(--text-dim); font-style: italic; }
+    .context-actions {
+      display: flex; gap: 8px; margin-top: 8px;
+    }
+    .ctx-action-btn {
+      background: none; border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted); cursor: pointer;
+      font-size: 11px; padding: 3px 8px;
+      transition: all var(--transition);
+    }
+    .ctx-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .ctx-action-btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Inline edit textarea ── */
+    .inline-edit {
+      width: 100%; background: var(--surface2);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-sm);
+      color: var(--text); padding: 8px;
+      font-size: 13px; font-family: inherit;
+      resize: vertical; min-height: 60px;
+      outline: none; margin-top: 6px;
+    }
+    .inline-edit-actions { display: flex; gap: 6px; margin-top: 6px; }
+
+    /* ── Messages ── */
+    .messages {
+      flex: 1; overflow-y: auto;
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .msg {
+      display: flex; gap: 10px; max-width: 720px;
+    }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .msg.assistant { align-self: flex-start; }
+
+    .msg-bubble {
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 14px; line-height: 1.6;
+      max-width: 600px; word-break: break-word;
+    }
+    .msg.user .msg-bubble {
+      background: var(--accent);
+      color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+    .msg.assistant .msg-bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 3px;
+    }
+    .msg-bubble pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      overflow-x: auto;
+      font-size: 12px;
+      margin: 6px 0;
+    }
+    .msg-bubble code {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 12px;
+    }
+    .msg-bubble p { margin-bottom: 6px; }
+    .msg-bubble p:last-child { margin-bottom: 0; }
+    .msg-note { opacity: 0.6; font-style: italic; }
+
+    .msg-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 600;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .msg.user .msg-avatar { background: var(--accent-muted); color: var(--accent); }
+    .msg.assistant .msg-avatar { background: var(--surface2); color: var(--text-muted); }
+
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; color: var(--text-dim);
+      text-align: center; padding: 24px;
+    }
+    .empty-state h3 { font-size: 16px; color: var(--text-muted); font-weight: 500; }
+    .empty-state p { font-size: 13px; max-width: 280px; line-height: 1.5; }
+
+    .typing-indicator {
+      display: flex; gap: 4px; align-items: center;
+      padding: 10px 14px;
+    }
+    .typing-indicator span {
+      width: 6px; height: 6px; background: var(--text-dim);
+      border-radius: 50%;
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-5px); }
+    }
+
+    /* ── Input area ── */
+    .input-area {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .input-area-top {
+      display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px;
+    }
+    .input-row {
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    textarea#msg-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px; font-family: inherit;
+      resize: none;
+      line-height: 1.5;
+      min-height: 44px; max-height: 160px;
+      outline: none;
+      transition: border-color var(--transition);
+    }
+    textarea#msg-input:focus { border-color: var(--accent); }
+    textarea#msg-input::placeholder { color: var(--text-dim); }
+
+    .send-btn {
+      background: var(--accent);
+      border: none; border-radius: var(--radius);
+      color: #fff; cursor: pointer;
+      padding: 10px 14px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background var(--transition), opacity var(--transition);
+      flex-shrink: 0;
+    }
+    .send-btn:hover { background: var(--accent-hover); }
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* input options row */
+    .input-options {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .opt-chip {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 3px 10px;
+      font-size: 11px; color: var(--text-muted);
+      cursor: pointer; user-select: none;
+      transition: all var(--transition);
+    }
+    .opt-chip:hover { border-color: var(--accent); color: var(--text); }
+    .opt-chip.active { background: var(--accent-muted); border-color: var(--accent); color: var(--accent); }
+    .opt-chip input[type=checkbox] { display: none; }
+
+    .context-src-list {
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+
+    /* suggest chip */
+    .suggest-chip {
+      background: none; border: 1px dashed var(--border);
+      border-radius: 20px; padding: 3px 10px;
+      font-size: 11px; color: var(--text-dim);
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .suggest-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Modal ── */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 80;
+    }
+    .modal-backdrop.hidden { display: none; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 420px; max-width: 95vw;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .modal h3 { font-size: 16px; font-weight: 600; }
+    .modal label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .modal input, .modal select, .modal textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px; font-family: inherit;
+      outline: none;
+    }
+    .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
+    .modal select option { background: var(--bg); }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; }
+
+    /* ── Buttons ── */
+    .btn {
+      background: none; border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted); cursor: pointer;
+      font-size: 13px; padding: 7px 14px;
+      transition: all var(--transition);
+    }
+    .btn:hover { border-color: var(--text-muted); color: var(--text); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent-hover); }
+    .btn.danger { border-color: var(--red); color: var(--red); }
+    .btn.danger:hover { background: var(--red); color: #fff; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 16px; font-size: 13px;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+      z-index: 200;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Conversations panel ── */
+    .conv-list { display: flex; flex-direction: column; gap: 4px; }
+    .conv-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+    .conv-item:hover { background: var(--surface2); }
+    .conv-item-body { flex: 1; min-width: 0; }
+    .conv-item-topic { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv-item-preview { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+    .conv-item-time { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+    .conv-delete-btn {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; padding: 3px; border-radius: 3px;
+      opacity: 0; transition: opacity var(--transition);
+    }
+    .conv-item:hover .conv-delete-btn { opacity: 1; }
+    .conv-delete-btn:hover { color: var(--red); }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      #sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 60; }
+      #sidebar.hidden { transform: translateX(-100%); display: flex; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Auth overlay -->
+<div id="auth-overlay">
+  <div class="auth-card">
+    <h2>Assistant</h2>
+    <p>Enter your API key to continue.</p>
+    <input type="password" id="api-key-input" placeholder="Bearer token" autocomplete="current-password" />
+    <button class="btn primary" id="auth-submit-btn">Continue</button>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <span class="logo">Assistant</span>
+
+  <div class="topic-picker" id="topic-picker" data-tooltip="Pick a topic to chat about">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span class="label placeholder" id="topic-picker-label">Select a topic…</span>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+  </div>
+
+  <div class="header-actions">
+    <button class="icon-btn" id="browse-btn" data-tooltip="Browse topics &amp; memory">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    </button>
+    <button class="icon-btn" id="history-btn" data-tooltip="Conversation history">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
+    <button class="icon-btn" id="update-summaries-btn" data-tooltip="Refresh all summaries now">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+    </button>
+    <button class="icon-btn" id="settings-btn" data-tooltip="Settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Sidebar / Browse -->
+  <aside id="sidebar" class="hidden">
+    <div class="sidebar-header">
+      <h3>Topics</h3>
+      <button class="icon-btn" id="sidebar-close-btn" data-tooltip="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="sidebar-search">
+      <input type="text" id="sidebar-search" placeholder="Search topics…" />
+    </div>
+    <div class="sidebar-list" id="sidebar-list"></div>
+    <div class="sidebar-footer">
+      <button class="btn primary" id="new-topic-btn" style="width:100%">New topic</button>
+    </div>
+  </aside>
+
+  <!-- Chat area -->
+  <div class="chat-area">
+
+    <!-- Context preview -->
+    <div id="context-preview">
+      <div class="context-toggle" id="context-toggle">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="context-toggle-label">What the AI knows</span>
+        <svg class="chevron" id="context-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+      </div>
+      <div class="context-body" id="context-body" style="display:none"></div>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages" id="messages">
+      <div class="empty-state" id="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <h3>Pick a topic to start</h3>
+        <p>Select a topic from the header, or just type — the assistant will suggest one for you.</p>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="input-area">
+      <div class="input-options" id="input-options">
+        <label class="opt-chip" id="note-chip" data-tooltip="Save as a note — no AI response">
+          <input type="checkbox" id="note-mode-toggle" />
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Note
+        </label>
+        <div class="context-src-list" id="context-src-chips"></div>
+        <button class="suggest-chip" id="suggest-category-btn" data-tooltip="Let AI suggest a category and topic">Suggest topic</button>
+      </div>
+      <div class="input-row" style="margin-top:8px">
+        <textarea id="msg-input" placeholder="Type a message…" rows="1"></textarea>
+        <button class="send-btn" id="send-btn" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Topic Picker Modal -->
+<div class="modal-backdrop hidden" id="topic-modal">
+  <div class="modal">
+    <h3>Select topic</h3>
+    <div>
+      <label>Category</label>
+      <select id="modal-category-select">
+        <option value="">— new category —</option>
+      </select>
+    </div>
+    <div id="modal-new-category-row">
+      <label>New category name</label>
+      <input type="text" id="modal-new-category" placeholder="e.g. Work" />
+    </div>
+    <div>
+      <label>Topic</label>
+      <select id="modal-topic-select">
+        <option value="">— new topic —</option>
+      </select>
+    </div>
+    <div id="modal-new-topic-row">
+      <label>New topic name</label>
+      <input type="text" id="modal-new-topic" placeholder="e.g. Project kickoff" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="topic-modal-cancel">Cancel</button>
+      <button class="btn primary" id="topic-modal-confirm">Select</button>
+    </div>
+  </div>
+</div>
+
+<!-- History Modal -->
+<div class="modal-backdrop hidden" id="history-modal">
+  <div class="modal" style="width:480px">
+    <h3>Conversation history</h3>
+    <div>
+      <label>Filter by topic (current): <span id="history-filter-label" style="color:var(--accent)">all</span></label>
+    </div>
+    <div id="conv-list" class="conv-list" style="max-height:320px; overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="btn" id="history-modal-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-backdrop hidden" id="settings-modal">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div>
+      <label>API endpoint</label>
+      <input type="text" id="settings-endpoint" placeholder="https://your-worker.workers.dev" />
+    </div>
+    <div>
+      <label>API key</label>
+      <input type="password" id="settings-api-key" placeholder="Bearer token" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="settings-cancel">Cancel</button>
+      <button class="btn primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── State ──────────────────────────────────────────────────────────────
+  const state = {
+    apiKey: "",
+    endpoint: "",
+    category: "",
+    topic: "",
+    topicId: null,
+    categoryId: null,
+    categories: [],
+    contextSources: [],
+    activeContextSources: [],
+    messages: [],
+    loading: false,
+    contextOpen: false,
+  };
+
+  // ── Persistence ─────────────────────────────────────────────────────────
+  function loadSettings() {
+    state.apiKey = localStorage.getItem("pa_api_key") || "";
+    state.endpoint = localStorage.getItem("pa_endpoint") || "";
+  }
+  function saveSettings() {
+    localStorage.setItem("pa_api_key", state.apiKey);
+    localStorage.setItem("pa_endpoint", state.endpoint);
+  }
+
+  // ── DOM refs ─────────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const authOverlay     = $("auth-overlay");
+  const authSubmitBtn   = $("auth-submit-btn");
+  const apiKeyInput     = $("api-key-input");
+  const topicPickerEl   = $("topic-picker");
+  const topicPickerLbl  = $("topic-picker-label");
+  const browseBtn       = $("browse-btn");
+  const historyBtn      = $("history-btn");
+  const updateSumBtn    = $("update-summaries-btn");
+  const settingsBtn     = $("settings-btn");
+  const sidebar         = $("sidebar");
+  const sidebarCloseBtn = $("sidebar-close-btn");
+  const sidebarList     = $("sidebar-list");
+  const sidebarSearch   = $("sidebar-search");
+  const newTopicBtn     = $("new-topic-btn");
+  const contextToggle   = $("context-toggle");
+  const contextChevron  = $("context-chevron");
+  const contextBody     = $("context-body");
+  const contextToggleLbl= $("context-toggle-label");
+  const messagesEl      = $("messages");
+  const emptyState      = $("empty-state");
+  const msgInput        = $("msg-input");
+  const sendBtn         = $("send-btn");
+  const noteChip        = $("note-chip");
+  const noteModeToggle  = $("note-mode-toggle");
+  const contextSrcChips = $("context-src-chips");
+  const suggestCatBtn   = $("suggest-category-btn");
+  const topicModal      = $("topic-modal");
+  const historyModal    = $("history-modal");
+  const settingsModal   = $("settings-modal");
+  const toastEl         = $("toast");
+
+  // ── API ──────────────────────────────────────────────────────────────────
+  async function api(method, path, body) {
+    const opts = {
+      method,
+      headers: {
+        "Authorization": `Bearer ${state.apiKey}`,
+        "Content-Type": "application/json",
+      },
+    };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    const res = await fetch(state.endpoint + path, opts);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  let toastTimer;
+  function toast(msg, type = "info") {
+    toastEl.textContent = msg;
+    toastEl.style.borderColor = type === "error" ? "var(--red)" : type === "success" ? "var(--green)" : "var(--border)";
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3000);
+  }
+
+  // ── Freshness util ────────────────────────────────────────────────────────
+  function freshnessClass(ts) {
+    if (!ts) return "fresh-none";
+    const age = Date.now() / 1000 - ts;
+    if (age < 86400) return "fresh-high";       // < 1 day
+    if (age < 86400 * 7) return "fresh-mid";    // < 1 week
+    if (age < 86400 * 30) return "fresh-low";   // < 1 month
+    return "fresh-none";
+  }
+  function relativeTime(ts) {
+    if (!ts) return "never";
+    const age = Date.now() / 1000 - ts;
+    if (age < 60) return "just now";
+    if (age < 3600) return `${Math.floor(age / 60)}m ago`;
+    if (age < 86400) return `${Math.floor(age / 3600)}h ago`;
+    if (age < 86400 * 30) return `${Math.floor(age / 86400)}d ago`;
+    return new Date(ts * 1000).toLocaleDateString();
+  }
+
+  // ── Simple markdown renderer ──────────────────────────────────────────────
+  function renderMarkdown(text) {
+    // code blocks
+    text = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) =>
+      `<pre><code>${escHtml(code.trim())}</code></pre>`);
+    // inline code
+    text = text.replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`);
+    // bold
+    text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    // italic
+    text = text.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    // newlines to paragraphs
+    const paras = text.split(/\n\n+/).filter(Boolean);
+    return paras.map(p => {
+      if (p.startsWith("<pre>")) return p;
+      return `<p>${p.replace(/\n/g, "<br>")}</p>`;
+    }).join("");
+  }
+  function escHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  loadSettings();
+  if (state.apiKey && state.endpoint) {
+    authOverlay.style.display = "none";
+    init();
+  } else {
+    apiKeyInput.focus();
+    if (state.apiKey) apiKeyInput.value = state.apiKey;
+  }
+
+  authSubmitBtn.addEventListener("click", handleAuth);
+  apiKeyInput.addEventListener("keydown", e => { if (e.key === "Enter") handleAuth(); });
+
+  function handleAuth() {
+    const val = apiKeyInput.value.trim();
+    if (!val) { toast("Enter your API key", "error"); return; }
+    // if user pastes full endpoint+key or just key
+    if (val.startsWith("http")) {
+      const parts = val.split(" ");
+      state.endpoint = parts[0].replace(/\/$/, "");
+      state.apiKey = parts[1] || "";
+    } else {
+      state.apiKey = val;
+      // prompt for endpoint if not saved
+      if (!state.endpoint) {
+        const ep = prompt("API endpoint URL (e.g. https://your-worker.workers.dev):");
+        if (!ep) return;
+        state.endpoint = ep.trim().replace(/\/$/, "");
+      }
+    }
+    saveSettings();
+    authOverlay.style.display = "none";
+    init();
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  async function init() {
+    await Promise.all([loadCategories(), loadContextSources()]);
+    renderSidebar();
+  }
+
+  // ── Categories ────────────────────────────────────────────────────────────
+  async function loadCategories() {
+    try {
+      state.categories = await api("GET", "/categories");
+    } catch (err) {
+      toast("Couldn't load topics — " + err.message, "error");
+    }
+  }
+
+  // ── Context sources ───────────────────────────────────────────────────────
+  async function loadContextSources() {
+    try {
+      const sources = await api("GET", "/context-sources");
+      state.contextSources = Array.isArray(sources) ? sources : [];
+    } catch {
+      state.contextSources = [];
+    }
+    renderContextSourceChips();
+  }
+
+  function renderContextSourceChips() {
+    contextSrcChips.innerHTML = "";
+    state.contextSources.forEach(src => {
+      const chip = document.createElement("label");
+      chip.className = "opt-chip";
+      chip.setAttribute("data-tooltip", `Include ${src} context in this message`);
+      chip.innerHTML = `<input type="checkbox" value="${escHtml(src)}" />${escHtml(src)}`;
+      chip.querySelector("input").addEventListener("change", e => {
+        if (e.target.checked) {
+          state.activeContextSources.push(src);
+        } else {
+          state.activeContextSources = state.activeContextSources.filter(s => s !== src);
+        }
+        chip.classList.toggle("active", e.target.checked);
+      });
+      contextSrcChips.appendChild(chip);
+    });
+  }
+
+  // ── Sidebar ────────────────────────────────────────────────────────────────
+  function renderSidebar(filter = "") {
+    sidebarList.innerHTML = "";
+    const f = filter.toLowerCase();
+    state.categories.forEach(cat => {
+      const matchedTopics = cat.topics.filter(t =>
+        !f || t.name.toLowerCase().includes(f) || cat.name.toLowerCase().includes(f)
+      );
+      if (f && !matchedTopics.length) return;
+
+      const group = document.createElement("div");
+      group.className = "cat-group";
+
+      const header = document.createElement("div");
+      header.className = "cat-header";
+      header.innerHTML = `
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        ${escHtml(cat.name)}
+        <span class="freshness-dot ${freshnessClass(cat.updated_at_timestamp)}" title="Category updated ${relativeTime(cat.updated_at_timestamp)}"></span>
+      `;
+      header.addEventListener("click", () => {
+        header.classList.toggle("collapsed");
+        topicsEl.style.display = header.classList.contains("collapsed") ? "none" : "block";
+      });
+
+      const topicsEl = document.createElement("div");
+      matchedTopics.forEach(t => {
+        const item = document.createElement("div");
+        item.className = "topic-item" + (state.category === cat.name && state.topic === t.name ? " active" : "");
+        item.innerHTML = `
+          <span class="freshness-dot ${freshnessClass(t.updated_at_timestamp)}" title="Updated ${relativeTime(t.updated_at_timestamp)}"></span>
+          ${escHtml(t.name)}
+        `;
+        item.addEventListener("click", () => selectTopic(cat, t));
+        topicsEl.appendChild(item);
+      });
+
+      group.appendChild(header);
+      group.appendChild(topicsEl);
+      sidebarList.appendChild(group);
+    });
+  }
+
+  sidebarSearch.addEventListener("input", e => renderSidebar(e.target.value));
+
+  browseBtn.addEventListener("click", () => {
+    sidebar.classList.toggle("hidden");
+  });
+  sidebarCloseBtn.addEventListener("click", () => sidebar.classList.add("hidden"));
+
+  // ── Topic picker modal ─────────────────────────────────────────────────────
+  topicPickerEl.addEventListener("click", openTopicModal);
+  newTopicBtn.addEventListener("click", openTopicModal);
+
+  function openTopicModal() {
+    const catSelect = $("modal-category-select");
+    const topicSelect = $("modal-topic-select");
+    catSelect.innerHTML = `<option value="">— new category —</option>`;
+    state.categories.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.name;
+      opt.textContent = c.name;
+      if (c.name === state.category) opt.selected = true;
+      catSelect.appendChild(opt);
+    });
+    updateModalTopics();
+    topicModal.classList.remove("hidden");
+    catSelect.focus();
+  }
+
+  function updateModalTopics() {
+    const catName = $("modal-category-select").value;
+    const topicSelect = $("modal-topic-select");
+    topicSelect.innerHTML = `<option value="">— new topic —</option>`;
+    $("modal-new-category-row").style.display = catName ? "none" : "block";
+
+    if (catName) {
+      const cat = state.categories.find(c => c.name === catName);
+      if (cat) {
+        cat.topics.forEach(t => {
+          const opt = document.createElement("option");
+          opt.value = t.name;
+          opt.textContent = t.name;
+          if (t.name === state.topic) opt.selected = true;
+          topicSelect.appendChild(opt);
+        });
+      }
+    }
+    updateModalNewTopicRow();
+  }
+
+  function updateModalNewTopicRow() {
+    const topicVal = $("modal-topic-select").value;
+    $("modal-new-topic-row").style.display = topicVal ? "none" : "block";
+  }
+
+  $("modal-category-select").addEventListener("change", updateModalTopics);
+  $("modal-topic-select").addEventListener("change", updateModalNewTopicRow);
+
+  $("topic-modal-cancel").addEventListener("click", () => topicModal.classList.add("hidden"));
+  $("topic-modal-confirm").addEventListener("click", () => {
+    const catVal = $("modal-category-select").value || $("modal-new-category").value.trim();
+    const topicVal = $("modal-topic-select").value || $("modal-new-topic").value.trim();
+    if (!catVal || !topicVal) { toast("Both category and topic are required", "error"); return; }
+
+    const cat = state.categories.find(c => c.name === catVal);
+    const t = cat?.topics.find(t => t.name === topicVal);
+    selectTopic(
+      cat || { id: null, name: catVal, summary: "", updated_at_timestamp: null, topics: [] },
+      t   || { id: null, name: topicVal, summary: "", updated_at_timestamp: null }
+    );
+    topicModal.classList.add("hidden");
+  });
+
+  // ── Select topic ────────────────────────────────────────────────────────────
+  function selectTopic(cat, t) {
+    state.category = cat.name;
+    state.topic = t.name;
+    state.categoryId = cat.id || null;
+    state.topicId = t.id || null;
+    state.messages = [];
+
+    topicPickerLbl.textContent = `${cat.name} / ${t.name}`;
+    topicPickerLbl.classList.remove("placeholder");
+
+    renderContextPreview(cat, t);
+    renderMessages();
+    renderSidebar(sidebarSearch.value);
+    sidebar.classList.add("hidden");
+    msgInput.focus();
+  }
+
+  // ── Context preview ───────────────────────────────────────────────────────
+  function renderContextPreview(cat, t) {
+    contextBody.innerHTML = "";
+
+    const cards = [];
+
+    // Topic summary card
+    cards.push(makeSummaryCard("Topic memory", t, "topic", t.id));
+
+    // Category summary card
+    if (cat.summary || cat.id) {
+      cards.push(makeSummaryCard("Category overview", cat, "category", cat.id));
+    }
+
+    cards.forEach(c => contextBody.appendChild(c));
+
+    // Update toggle label
+    const hasSummary = t.summary || cat.summary;
+    contextToggleLbl.textContent = hasSummary
+      ? `What the AI knows about ${t.name}`
+      : "No prior memory for this topic";
+
+    if (!state.contextOpen) contextBody.style.display = "none";
+  }
+
+  function makeSummaryCard(title, item, type, id) {
+    const card = document.createElement("div");
+    card.className = "context-card";
+
+    const fClass = freshnessClass(item.updated_at_timestamp);
+    const rTime = relativeTime(item.updated_at_timestamp);
+
+    card.innerHTML = `
+      <div class="context-card-header">
+        <span class="freshness-dot ${fClass}" title="Updated ${rTime}"></span>
+        <span class="context-card-title">${escHtml(title)}</span>
+        <div class="context-card-meta">
+          <span class="meta-tag">${rTime}</span>
         </div>
       </div>
-      <input id="sidebarSearch" type="text" placeholder="Search conversations..." oninput="renderConversations()" />
-      <div id="conversations"></div>
-      <button class="update-btn" onclick="updateSummaries()"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:middle;margin-right:4px"><path d="M2 7a5 5 0 0110 0M12 2v4.5H7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Update Summaries</button>
-    </div>
-    <div id="main">
-    <h1>Personal Assistant</h1>
-    <details style="margin-bottom:10px">
-      <summary style="cursor:pointer;user-select:none;font-size:14px;color:var(--blockquote)">Keys</summary>
-      <input id="apiKey" type="password" placeholder="API Key" />
-      <input id="kanbanApiKey" type="password" placeholder="KanbanFlow API Key (optional, for manual override)" />
-    </details>
-    <div class="tabs">
-      <button class="tab active" onclick="switchTab('chat')">Chat</button>
-      <button class="tab" onclick="switchTab('query')">Query</button>
-      <button class="tab" onclick="switchTab('explore')">Explore</button>
-      <button class="tab" onclick="switchTab('data')">Data</button>
-      <button class="tab" onclick="switchTab('kanban')">Kanban</button>
-    </div>
-    <div id="tab-chat" class="tab-content active">
-      <input id="category" list="categoryList" placeholder="Category (or type new)" />
-      <datalist id="categoryList"></datalist>
-      <input id="topic" list="topicList" placeholder="Topic (or type new)" />
-      <datalist id="topicList"></datalist>
-      <textarea id="message" placeholder="Message"></textarea>
-      <div id="contextSources"></div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <button id="sendBtn" onclick="send()" style="flex:1">Send</button>
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;user-select:none">
-          <input type="checkbox" id="noteMode" onchange="toggleNoteMode()" style="width:auto;margin:0" />
-          Save as note
-        </label>
+      <div class="context-text" id="ctx-text-${type}-${id}">
+        ${item.summary
+          ? escHtml(item.summary)
+          : `<span class="context-empty">No memory yet — the AI will learn as you chat.</span>`}
       </div>
-      <div id="messages"></div>
-    </div>
-    <div id="tab-query" class="tab-content">
-      <fieldset>
-        <legend>Query Topic</legend>
-        <select id="qTopicCategory">
-          <option value="">Select Category</option>
-        </select>
-        <select id="qTopicName">
-          <option value="">Select Topic</option>
-        </select>
-        <textarea id="qTopicPrompt" placeholder="Prompt"></textarea>
-        <button onclick="queryTopic()">Query Topic</button>
-      </fieldset>
-      <fieldset>
-        <legend>Query Category</legend>
-        <select id="qCategoryName">
-          <option value="">Select Category</option>
-        </select>
-        <textarea id="qCategoryPrompt" placeholder="Prompt"></textarea>
-        <button onclick="queryCategory()">Query Category</button>
-      </fieldset>
-      <div id="queryResults"></div>
-    </div>
-    <div id="tab-explore" class="tab-content">
-      <div id="exploreList"></div>
-    </div>
-    <div id="tab-data" class="tab-content">
-      <fieldset>
-        <legend>Export</legend>
-        <button id="exportBtn" onclick="exportData()">Export All Data</button>
-        <div id="exportResult"></div>
-      </fieldset>
-      <fieldset>
-        <legend>Import</legend>
-        <input type="file" id="importFile" accept=".json" onchange="previewImport()" />
-        <div id="importPreview" style="font-size:13px"></div>
-        <button id="importBtn" onclick="importData()" disabled>Import</button>
-        <div id="importResult"></div>
-      </fieldset>
-    </div>
-    <div id="tab-kanban" class="tab-content">
-      <fieldset>
-          <legend>Add Task</legend>
-          <select id="kanbanColumn"><option value="">Select column</option></select>
-          <input id="kanbanTaskName" placeholder="Task name" />
-          <input id="kanbanCategory" placeholder="Category (leave empty to auto-generate)" />
-          <input id="kanbanTopic" placeholder="Topic (leave empty to auto-generate)" />
-          <button id="kanbanAddBtn" onclick="createKanbanTask()">Add Task</button>
-          <div id="kanbanCreateResult"></div>
-      </fieldset>
-      <fieldset>
-        <legend>Rundown</legend>
-        <textarea id="kanbanPrompt" placeholder="Custom prompt (optional — defaults to asking for a rundown and starting advice)">What's on my plate today and what should I prioritize?</textarea>
-        <button onclick="generateKanbanRundown()">Generate Kanban Rundown</button>
-        <div id="kanbanResults"></div>
-      </fieldset>
-    </div>
-    </div>
-    <script>
-      const base = location.origin
-      const msgs = document.getElementById("messages")
-      const apiKey = document.getElementById("apiKey")
-      const category = document.getElementById("category")
-      const topic = document.getElementById("topic")
-      const message = document.getElementById("message")
+      <div class="context-actions" id="ctx-actions-${type}-${id}">
+        ${id ? `<button class="ctx-action-btn" data-action="revise" data-type="${type}" data-id="${id}">Revise</button>
+               <button class="ctx-action-btn danger" data-action="forget" data-type="${type}" data-id="${id}">Forget</button>` : ""}
+      </div>
+      <div id="ctx-edit-${type}-${id}"></div>
+    `;
 
-      const savedKey = localStorage.getItem("apiKey")
-      if (savedKey) apiKey.value = savedKey
-
-      apiKey.addEventListener("change", () => {
-        localStorage.setItem("apiKey", apiKey.value)
-        loadCategories()
-      })
-
-      const kanbanApiKey = document.getElementById("kanbanApiKey")
-      const savedKanbanKey = localStorage.getItem("kanbanApiKey")
-      if (savedKanbanKey) kanbanApiKey.value = savedKanbanKey
-
-      kanbanApiKey.addEventListener("change", () => {
-        localStorage.setItem("kanbanApiKey", kanbanApiKey.value)
-        loadKanbanColumns()
-      })
-
-      const kanbanPrompt = document.getElementById("kanbanPrompt")
-      const savedKanbanPrompt = localStorage.getItem("kanbanPrompt")
-      if (savedKanbanPrompt) kanbanPrompt.value = savedKanbanPrompt
-
-      kanbanPrompt.addEventListener("change", () => {
-        localStorage.setItem("kanbanPrompt", kanbanPrompt.value)
-      })
-
-      document.getElementById("kanbanCategory").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
-      document.getElementById("kanbanTopic").addEventListener("input", () => { document.getElementById("kanbanAddBtn").textContent = "Add Task" })
-
-      let conversations = []
-      let currentConvId = null
-      let currentMessages = []
-
-      /** Renders the sidebar conversation list, filtered by the search input. */
-      function renderConversations() {
-        const container = document.getElementById("conversations")
-        const search = (document.getElementById("sidebarSearch")?.value || "").toLowerCase()
-        const filtered = conversations.filter(c => {
-          if (!search) return true
-          return (c.category + " " + c.topic + " " + (c.last_message || "")).toLowerCase().includes(search)
-        })
-        container.innerHTML = filtered
-          .map(c => {
-            const label = [c.category, c.topic].filter(Boolean).join(" / ")
-            const preview = c.last_message || ""
-            const time = c.created_at ? relativeTime(c.created_at) : ""
-            const isActive = c.id === currentConvId
-            return `<div class="conv-item ${isActive ? "active" : ""}" onclick="loadConversation(${c.id})">
-              <div class="conv-title">${escapeHtml(label) || "New conversation"}</div>
-              ${preview ? `<div class="conv-preview">${escapeHtml(preview)}${preview.length >= 80 ? "…" : ""}</div>` : ""}
-              <div class="conv-meta">
-                <span class="conv-time">${time}</span>
-                <button class="conv-delete" aria-label="Delete conversation" title="Delete conversation" onclick="event.stopPropagation();deleteConversation(${c.id})"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-              </div>
-            </div>`
-          })
-          .join("")
-        if (!filtered.length) {
-          container.innerHTML = '<div style="text-align:center;padding:20px;opacity:0.5;font-size:13px">No conversations</div>'
+    // Revise / Forget actions
+    card.querySelectorAll("[data-action]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const action = btn.dataset.action;
+        const editEl = $(`ctx-edit-${type}-${id}`);
+        if (action === "forget") {
+          if (!confirm("Clear this memory? This can't be undone.")) return;
+          updateSummary(type, id, "", item, card);
+        } else if (action === "revise") {
+          if ($(`ctx-edit-area-${type}-${id}`)) return; // already open
+          const ta = document.createElement("textarea");
+          ta.className = "inline-edit";
+          ta.id = `ctx-edit-area-${type}-${id}`;
+          ta.value = item.summary || "";
+          const actions = document.createElement("div");
+          actions.className = "inline-edit-actions";
+          const saveBtn = document.createElement("button");
+          saveBtn.className = "btn primary"; saveBtn.style.fontSize = "12px"; saveBtn.style.padding = "5px 10px";
+          saveBtn.textContent = "Save";
+          const cancelBtn = document.createElement("button");
+          cancelBtn.className = "btn"; cancelBtn.style.fontSize = "12px"; cancelBtn.style.padding = "5px 10px";
+          cancelBtn.textContent = "Cancel";
+          actions.append(saveBtn, cancelBtn);
+          editEl.append(ta, actions);
+          ta.focus();
+          saveBtn.addEventListener("click", () => updateSummary(type, id, ta.value, item, card));
+          cancelBtn.addEventListener("click", () => editEl.innerHTML = "");
         }
+      });
+    });
+
+    return card;
+  }
+
+  async function updateSummary(type, id, summary, item, card) {
+    try {
+      await api("POST", "/update-summary", { type, id: Number(id), summary });
+      item.summary = summary;
+      item.updated_at_timestamp = Math.floor(Date.now() / 1000);
+      // refresh the card
+      const newCard = makeSummaryCard(
+        type === "topic" ? "Topic memory" : "Category overview",
+        item, type, id
+      );
+      card.replaceWith(newCard);
+      toast(summary ? "Memory updated" : "Memory cleared", "success");
+    } catch (err) {
+      toast("Couldn't update memory — " + err.message, "error");
+    }
+  }
+
+  contextToggle.addEventListener("click", () => {
+    state.contextOpen = !state.contextOpen;
+    contextBody.style.display = state.contextOpen ? "flex" : "none";
+    contextBody.style.flexDirection = "column";
+    contextChevron.classList.toggle("open", state.contextOpen);
+  });
+
+  // ── Messages ───────────────────────────────────────────────────────────────
+  function renderMessages() {
+    // Remove all messages except empty state
+    const nodes = Array.from(messagesEl.children);
+    nodes.forEach(n => { if (n !== emptyState) n.remove(); });
+
+    emptyState.style.display = state.messages.length ? "none" : "flex";
+    state.messages.forEach(m => messagesEl.appendChild(createMsgEl(m)));
+    scrollToBottom();
+  }
+
+  function createMsgEl(msg) {
+    const div = document.createElement("div");
+    div.className = `msg ${msg.role}`;
+    const avatar = document.createElement("div");
+    avatar.className = "msg-avatar";
+    avatar.textContent = msg.role === "user" ? "U" : "AI";
+    const bubble = document.createElement("div");
+    bubble.className = "msg-bubble" + (msg.note ? " msg-note" : "");
+    bubble.innerHTML = renderMarkdown(msg.content);
+    div.append(avatar, bubble);
+    return div;
+  }
+
+  function appendMessage(msg) {
+    state.messages.push(msg);
+    emptyState.style.display = "none";
+    messagesEl.appendChild(createMsgEl(msg));
+    scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // ── Send ────────────────────────────────────────────────────────────────────
+  msgInput.addEventListener("input", () => {
+    sendBtn.disabled = !msgInput.value.trim();
+    // auto-grow
+    msgInput.style.height = "auto";
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 160) + "px";
+  });
+
+  msgInput.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  sendBtn.addEventListener("click", sendMessage);
+
+  async function sendMessage() {
+    const text = msgInput.value.trim();
+    if (!text || state.loading) return;
+
+    // If no topic selected, suggest one first
+    if (!state.category || !state.topic) {
+      try {
+        toast("Suggesting a topic…");
+        const suggestion = await api("POST", "/suggest-category", { message: text });
+        // Find or use suggested
+        const cat = state.categories.find(c => c.name === suggestion.category)
+          || { id: null, name: suggestion.category, summary: "", updated_at_timestamp: null, topics: [] };
+        const t = cat.topics?.find(t => t.name === suggestion.topic)
+          || { id: null, name: suggestion.topic, summary: "", updated_at_timestamp: null };
+        selectTopic(cat, t);
+      } catch (err) {
+        toast("Couldn't suggest topic — " + err.message, "error");
+        return;
       }
+    }
 
-      /**
-       * Converts a unix timestamp to a relative time string (e.g. "5m ago").
-       * @param {number} timestamp - Unix timestamp in seconds
-       * @returns {string}
-       */
-      function relativeTime(timestamp) {
-        const now = Math.floor(Date.now() / 1000)
-        const diff = now - timestamp
-        if (diff < 60) return "just now"
-        if (diff < 3600) return Math.floor(diff / 60) + "m ago"
-        if (diff < 86400) return Math.floor(diff / 3600) + "h ago"
-        if (diff < 172800) return "yesterday"
-        if (diff < 604800) return Math.floor(diff / 86400) + "d ago"
-        return new Date(timestamp * 1000).toLocaleDateString()
+    const noteMode = noteModeToggle.checked;
+    msgInput.value = "";
+    msgInput.style.height = "auto";
+    sendBtn.disabled = true;
+    state.loading = true;
+
+    appendMessage({ role: "user", content: text });
+
+    // Typing indicator
+    const typingEl = document.createElement("div");
+    typingEl.className = "msg assistant";
+    typingEl.innerHTML = `
+      <div class="msg-avatar">AI</div>
+      <div class="msg-bubble">
+        <div class="typing-indicator"><span></span><span></span><span></span></div>
+      </div>`;
+    messagesEl.appendChild(typingEl);
+    scrollToBottom();
+
+    try {
+      const result = await api("POST", "/chat", {
+        category: state.category,
+        topic: state.topic,
+        message: text,
+        contextSources: state.activeContextSources,
+        noteMode,
+      });
+
+      typingEl.remove();
+      appendMessage({ role: "assistant", content: result.response, note: noteMode });
+
+      // If new category/topic was created, refresh categories
+      await loadCategories();
+      renderSidebar(sidebarSearch.value);
+
+      // Refresh context after first exchange
+      const cat = state.categories.find(c => c.name === state.category);
+      const t = cat?.topics.find(t => t.name === state.topic);
+      if (cat && t) renderContextPreview(cat, t);
+
+    } catch (err) {
+      typingEl.remove();
+      appendMessage({ role: "assistant", content: "Couldn't reach the assistant. " + err.message });
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  // ── Suggest category ────────────────────────────────────────────────────────
+  suggestCatBtn.addEventListener("click", async () => {
+    const text = msgInput.value.trim();
+    if (!text) { toast("Type a message first, then suggest topic", "error"); return; }
+    try {
+      const s = await api("POST", "/suggest-category", { message: text });
+      const cat = state.categories.find(c => c.name === s.category)
+        || { id: null, name: s.category, summary: "", updated_at_timestamp: null, topics: [] };
+      const t = cat.topics?.find(t => t.name === s.topic)
+        || { id: null, name: s.topic, summary: "", updated_at_timestamp: null };
+      selectTopic(cat, t);
+      toast(`Suggested: ${s.category} / ${s.topic}`, "success");
+    } catch (err) {
+      toast("Couldn't suggest — " + err.message, "error");
+    }
+  });
+
+  // ── Note mode toggle ─────────────────────────────────────────────────────
+  noteModeToggle.addEventListener("change", () => {
+    noteChip.classList.toggle("active", noteModeToggle.checked);
+    msgInput.placeholder = noteModeToggle.checked
+      ? "Save a note (no AI response)…"
+      : "Type a message…";
+  });
+
+  // ── Update summaries ────────────────────────────────────────────────────────
+  updateSumBtn.addEventListener("click", async () => {
+    try {
+      updateSumBtn.style.opacity = "0.5";
+      await api("POST", "/update-summaries");
+      await loadCategories();
+      renderSidebar(sidebarSearch.value);
+
+      // Refresh context preview
+      const cat = state.categories.find(c => c.name === state.category);
+      const t = cat?.topics.find(t => t.name === state.topic);
+      if (cat && t) renderContextPreview(cat, t);
+
+      toast("Summaries refreshed", "success");
+    } catch (err) {
+      toast("Couldn't refresh summaries — " + err.message, "error");
+    } finally {
+      updateSumBtn.style.opacity = "";
+    }
+  });
+
+  // ── History ─────────────────────────────────────────────────────────────────
+  historyBtn.addEventListener("click", async () => {
+    historyModal.classList.remove("hidden");
+    await refreshHistory();
+  });
+  $("history-modal-close").addEventListener("click", () => historyModal.classList.add("hidden"));
+
+  async function refreshHistory() {
+    const convList = $("conv-list");
+    const filterLbl = $("history-filter-label");
+    convList.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:8px 0">Loading…</div>`;
+
+    const params = new URLSearchParams();
+    if (state.category) params.set("category", state.category);
+    if (state.topic) params.set("topic", state.topic);
+    filterLbl.textContent = state.topic ? `${state.category} / ${state.topic}` : "all";
+
+    try {
+      const conversations = await api("GET", `/conversations?${params}`);
+      convList.innerHTML = "";
+      if (!conversations.length) {
+        convList.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:8px 0">No conversations yet.</div>`;
+        return;
       }
-
-      /** Clears the current conversation and resets the UI to start a new one. */
-      function newConversation() {
-        currentConvId = null
-        currentMessages = []
-        category.value = ""
-        topic.value = ""
-        msgs.innerHTML = ""
-        document.getElementById("sidebarSearch").value = ""
-        renderConversations()
-      }
-
-      /**
-       * Loads a conversation's messages from the server and displays them.
-       * @param {number} id - Conversation ID
-       */
-      async function loadConversation(id) {
-        const conv = conversations.find((c) => c.id === id)
-        if (!conv) return
-        currentConvId = id
-        category.value = conv.category || ""
-        topic.value = conv.topic || ""
-        msgs.innerHTML = '<div class="msg">Loading...</div>'
-        const res = await req("GET", `/conversation?id=${id}`)
-        if (res.messages) {
-          currentMessages = res.messages.map(m => ({ role: m.role, text: m.content }))
-        } else {
-          currentMessages = []
-        }
-        msgs.innerHTML = currentMessages
-          .map((m) => `<div class="msg ${m.role}"><b>${m.role}:</b> ${m.role === "assistant" ? parseMarkdown(m.text) : m.text}</div>`)
-          .join("")
-        msgs.scrollTop = msgs.scrollHeight
-        renderConversations()
-      }
-
-      /**
-       * Appends a message to the local messages display and the current conversation buffer.
-       * @param {"user"|"assistant"} role
-       * @param {string} text
-       */
-      function addMsg(role, text) {
-        const content = role === 'assistant' ? parseMarkdown(text) : text
-        msgs.innerHTML += `<div class="msg ${role}"><b>${role}:</b> ${content}</div>`
-        msgs.scrollTop = msgs.scrollHeight
-        currentMessages.push({ role, text })
-      }
-
-      /** Fetches the conversation list from the server and re-renders the sidebar. */
-      async function refreshConversations() {
-        const res = await req("GET", "/conversations")
-        if (Array.isArray(res)) {
-          conversations = res
-          renderConversations()
-        }
-      }
-
-      /**
-       * Deletes a conversation after user confirmation.
-       * @param {number} id - Conversation ID
-       */
-      async function deleteConversation(id) {
-        if (!confirm("Delete this conversation?")) return
-        await req("DELETE", `/conversation?id=${id}`)
-        if (currentConvId === id) newConversation()
-        await refreshConversations()
-      }
-
-      /** Fetches available context providers (kanban-rundown, etc.) and renders checkboxes. */
-      async function loadContextSources() {
-        const res = await req("GET", "/context-sources")
-        if (Array.isArray(res)) {
-          const container = document.getElementById("contextSources")
-          container.innerHTML = res.map(s => `<label><input type="checkbox" value="${escapeHtml(s.name)}" /> ${escapeHtml(s.name)}</label>`).join("")
-        }
-      }
-
-      newConversation()
-      refreshConversations()
-      loadCategories()
-      loadContextSources()
-      if (kanbanApiKey.value) loadKanbanColumns()
-
-      /**
-       * Sends an authenticated API request to the backend.
-       * @param {"GET"|"POST"|"DELETE"} method
-       * @param {string} path
-       * @param {object} [body] - JSON body (for POST)
-       * @returns {Promise<any>}
-       */
-      async function req(method, path, body) {
-        const headers = { Authorization: `Bearer ${apiKey.value}` }
-        if (body) headers["Content-Type"] = "application/json"
-        const r = await fetch(base + path, {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined,
-        })
-        return r.json()
-      }
-
-      /**
-       * Switches the active tab, pre-filling kanban fields from chat when first opened.
-       * @param {"chat"|"query"|"explore"|"kanban"} tab
-       */
-      function switchTab(tab) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'))
-        document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active')
-        document.getElementById(`tab-${tab}`).classList.add('active')
-        if (tab === 'kanban') {
-          const catInput = document.getElementById("kanbanCategory")
-          const topicInput = document.getElementById("kanbanTopic")
-          if (!catInput.value && !topicInput.value) {
-            catInput.value = document.getElementById("category").value
-            topicInput.value = document.getElementById("topic").value
+      conversations.forEach(conv => {
+        const item = document.createElement("div");
+        item.className = "conv-item";
+        item.innerHTML = `
+          <div class="conv-item-body">
+            <div class="conv-item-topic">${escHtml(conv.category)} / ${escHtml(conv.topic)}</div>
+            <div class="conv-item-preview">${escHtml(conv.last_message || "—")}</div>
+          </div>
+          <span class="conv-item-time">${relativeTime(conv.created_at)}</span>
+          <button class="conv-delete-btn" title="Delete conversation" data-id="${conv.id}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+        `;
+        item.querySelector(".conv-item-body").addEventListener("click", () => loadConversation(conv.id));
+        item.querySelector(".conv-delete-btn").addEventListener("click", async e => {
+          e.stopPropagation();
+          if (!confirm("Delete this conversation?")) return;
+          try {
+            await api("DELETE", `/conversation?id=${conv.id}`);
+            await refreshHistory();
+            toast("Conversation deleted", "success");
+          } catch (err) {
+            toast("Couldn't delete — " + err.message, "error");
           }
-        }
-      }
+        });
+        convList.appendChild(item);
+      });
+    } catch (err) {
+      convList.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">Couldn't load history — ${err.message}</div>`;
+    }
+  }
 
-      /** Queries a specific topic by name with a custom prompt. */
-      async function queryTopic() {
-        const category = document.getElementById('qTopicCategory').value
-        const topic = document.getElementById('qTopicName').value
-        const prompt = document.getElementById('qTopicPrompt').value
-        if (!category || !topic || !prompt) return alert('Fill all fields')
-        document.getElementById('queryResults').innerHTML = '<div class="msg">Loading...</div>'
-        const res = await req('POST', '/query-topic', { category, topic, prompt })
-        document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Topic: ${topic}</b><br>${parseMarkdown(res.response || res.error)}</div>`
-      }
+  async function loadConversation(id) {
+    try {
+      const conv = await api("GET", `/conversation?id=${id}`);
+      // Set topic context
+      const cat = state.categories.find(c => c.name === conv.category)
+        || { id: null, name: conv.category, summary: "", updated_at_timestamp: null, topics: [] };
+      const t = cat.topics?.find(t => t.name === conv.topic)
+        || { id: null, name: conv.topic, summary: "", updated_at_timestamp: null };
 
-      /** Queries all topics in a category with a custom prompt. */
-      async function queryCategory() {
-        const category = document.getElementById('qCategoryName').value
-        const prompt = document.getElementById('qCategoryPrompt').value
-        if (!category || !prompt) return alert('Fill all fields')
-        document.getElementById('queryResults').innerHTML = '<div class="msg">Loading...</div>'
-        const res = await req('POST', '/query-category', { category, prompt })
-        document.getElementById('queryResults').innerHTML = `<div class="msg assistant"><b>Category: ${category}</b><br>${parseMarkdown(res.response || res.error)}</div>`
-      }
+      state.category = conv.category;
+      state.topic = conv.topic;
+      topicPickerLbl.textContent = `${conv.category} / ${conv.topic}`;
+      topicPickerLbl.classList.remove("placeholder");
+      state.messages = conv.messages;
 
-      /**
-       * Escapes HTML special characters in a string.
-       * @param {string} text
-       * @returns {string}
-       */
-      function escapeHtml(text) {
-        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-      }
+      renderContextPreview(cat, t);
+      renderMessages();
+      renderSidebar(sidebarSearch.value);
+      historyModal.classList.add("hidden");
+    } catch (err) {
+      toast("Couldn't load conversation — " + err.message, "error");
+    }
+  }
 
-      /**
-       * Converts basic markdown text to safe HTML.
-       * @param {string} text
-       * @returns {string}
-       */
-      function parseMarkdown(text) {
-        text = escapeHtml(text)
-        text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-        text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
-        text = text.replace(/`(.+?)`/g, '<code>$1</code>')
-        text = text.replace(/^\* (.+)$/gm, '<li>$1</li>')
-        text = text.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>')
-        text = text.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-        text = text.replace(/\n/g, '<br>')
-        return text
-      }
+  // ── Settings ────────────────────────────────────────────────────────────────
+  settingsBtn.addEventListener("click", () => {
+    $("settings-endpoint").value = state.endpoint;
+    $("settings-api-key").value = state.apiKey;
+    settingsModal.classList.remove("hidden");
+  });
+  $("settings-cancel").addEventListener("click", () => settingsModal.classList.add("hidden"));
+  $("settings-save").addEventListener("click", () => {
+    const ep = $("settings-endpoint").value.trim().replace(/\/$/, "");
+    const key = $("settings-api-key").value.trim();
+    if (!ep || !key) { toast("Both endpoint and API key are required", "error"); return; }
+    state.endpoint = ep;
+    state.apiKey = key;
+    saveSettings();
+    settingsModal.classList.add("hidden");
+    toast("Settings saved", "success");
+    init();
+  });
 
-      function toggleCategory(el) {
-        el.classList.toggle('collapsed');
-        el.nextElementSibling.classList.toggle('collapsed');
-      }
+  // ── Close modals on backdrop click ──────────────────────────────────────────
+  [topicModal, historyModal, settingsModal].forEach(modal => {
+    modal.addEventListener("click", e => {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+  });
 
-      function toggleTopic(el) {
-        el.classList.toggle('collapsed');
-        el.nextElementSibling.classList.toggle('collapsed');
-      }
-
-      /**
-       * Returns the names of all checked context source checkboxes.
-       * @returns {string[]}
-       */
-      function getSelectedContextSources() {
-        return [...document.querySelectorAll("#contextSources input:checked")].map(cb => cb.value)
-      }
-
-      function toggleNoteMode() {
-        const btn = document.getElementById("sendBtn")
-        btn.textContent = document.getElementById("noteMode").checked ? "Save Note" : "Send"
-      }
-
-      /** Sends a chat message. Auto-generates category/topic if empty with a confirm step. */
-      async function send() {
-        const btn = document.getElementById("sendBtn")
-        if (!apiKey.value || !message.value) return alert("Fill API key and message")
-        if (!category.value.trim() || !topic.value.trim()) {
-          btn.disabled = true
-          btn.textContent = "Generating..."
-          const suggest = await req("POST", "/suggest-category", { message: message.value })
-          btn.disabled = false
-          if (suggest.category) category.value = suggest.category
-          if (suggest.topic) topic.value = suggest.topic
-          btn.textContent = "Confirm Send"
-          return
-        }
-        btn.textContent = "Send"
-        const noteMode = document.getElementById("noteMode").checked
-        addMsg("user", message.value)
-        const contextSources = getSelectedContextSources()
-        const res = await req("POST", "/chat", { category: category.value, topic: topic.value, message: message.value, contextSources: contextSources.length ? contextSources : undefined, noteMode })
-        if (noteMode) {
-          msgs.innerHTML += `<div class="msg" style="opacity:0.5;font-size:12px"><i>📝 Note saved</i></div>`
-          msgs.scrollTop = msgs.scrollHeight
-        } else {
-          addMsg("assistant", res.response || res.error)
-        }
-        message.value = ""
-        if (res.conversationId) currentConvId = res.conversationId
-        await refreshConversations()
-      }
-
-      let categoriesData = []
-
-      /** Renders the collapsible explore view from cached categories data. */
-      function renderExplore() {
-        const container = document.getElementById("exploreList")
-        container.innerHTML = categoriesData
-          .map(c => `
-            <div class="cat-item">
-              <div class="cat-header collapsed" onclick="toggleCategory(this)">
-                <span class="icon">+</span>
-                <span class="cat-title">${escapeHtml(c.name)}</span>
-                <span class="chevron">v</span>
-              </div>
-              <div class="cat-body collapsed">
-                <div class="cat-summary">${c.summary ? parseMarkdown(c.summary) : '<em>no summary</em>'}</div>
-                ${c.topics.map(t => `
-                  <div class="topic-item">
-                    <div class="topic-header collapsed" onclick="toggleTopic(this)">
-                      <span class="icon">-</span>
-                      <span class="topic-title">${escapeHtml(t.name)}</span>
-                      <span class="chevron">v</span>
-                    </div>
-                    <div class="topic-body collapsed">
-                      <div class="topic-summary">${t.summary ? parseMarkdown(t.summary) : '<em>no summary</em>'}</div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `).join("")
-      }
-
-      /** Fetches all categories and topics from the server and updates all related UI. */
-      async function loadCategories() {
-        const res = await req("GET", "/categories")
-        categoriesData = res
-        
-        const catList = document.getElementById("categoryList")
-        const topicList = document.getElementById("topicList")
-        catList.innerHTML = res.map(c => `<option value="${c.name}">`).join("")
-        
-        const qTopicCat = document.getElementById("qTopicCategory")
-        const qTopicName = document.getElementById("qTopicName")
-        const qCatName = document.getElementById("qCategoryName")
-        qTopicCat.innerHTML = '<option value="">Select Category</option>' + res.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
-        qCatName.innerHTML = '<option value="">Select Category</option>' + res.map(c => `<option value="${c.name}">${c.name}</option>`).join("")
-        qTopicName.innerHTML = '<option value="">Select Topic</option>'
-        
-        renderExplore()
-      }
-
-      document.getElementById("qTopicCategory")?.addEventListener("change", function() {
-        const cat = categoriesData.find(c => c.name === this.value)
-        const qTopicName = document.getElementById("qTopicName")
-        qTopicName.innerHTML = '<option value="">Select Topic</option>' + (cat ? cat.topics.map(t => `<option value="${t.name}">${t.name}</option>`).join("") : "")
-      })
-
-      category.addEventListener("input", function() {
-        document.getElementById("sendBtn").textContent = "Send"
-        const cat = categoriesData.find(c => c.name === this.value)
-        const topicList = document.getElementById("topicList")
-        topicList.innerHTML = cat ? cat.topics.map(t => `<option value="${t.name}">`).join("") : categoriesData.flatMap(c => c.topics.map(t => `<option value="${t.name}">`)).join("")
-      })
-      topic.addEventListener("input", () => { document.getElementById("sendBtn").textContent = "Send" })
-
-      /** Triggers a manual summary update on the server, then reloads categories. */
-      async function updateSummaries() {
-        switchTab('explore')
-        document.getElementById('exploreList').innerHTML = 'Updating summaries...'
-        const res = await req("POST", "/update-summaries")
-        if (res.success) {
-          loadCategories()
-        } else {
-          document.getElementById('exploreList').innerHTML = `Error: ${res.error}`
-        }
-      }
-
-      let kanbanColumns = []
-
-      /** Fetches kanban board columns and populates the column selector. */
-      async function loadKanbanColumns() {
-        const select = document.getElementById("kanbanColumn")
-        select.innerHTML = '<option value="">Loading...</option>'
-        const res = await req("POST", "/kanban-board", { kanbanApiKey: kanbanApiKey.value })
-        if (res.columns) {
-          kanbanColumns = res.columns
-          select.innerHTML = '<option value="">Select column</option>' + res.columns.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("")
-        } else {
-          select.innerHTML = '<option value="">Failed to load columns</option>'
-        }
-      }
-
-      /** Creates a kanban task. Auto-generates category/topic if empty with a confirm step. */
-      async function createKanbanTask() {
-        const column = document.getElementById("kanbanColumn").value
-        const taskName = document.getElementById("kanbanTaskName").value
-        const catInput = document.getElementById("kanbanCategory")
-        const topicInput = document.getElementById("kanbanTopic")
-        const btn = document.getElementById("kanbanAddBtn")
-        const result = document.getElementById("kanbanCreateResult")
-        if (!column || !taskName) return alert("Select a column and enter a task name")
-
-        const needSuggest = !catInput.value.trim() || !topicInput.value.trim()
-        if (needSuggest) {
-          result.innerHTML = "Generating category/topic..."
-          btn.disabled = true
-          const suggest = await req("POST", "/kanban-suggest-category", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column })
-          btn.disabled = false
-          if (suggest.category) catInput.value = suggest.category
-          if (suggest.topic) topicInput.value = suggest.topic
-          result.innerHTML = `<div class="msg" style="font-size:13px;opacity:0.8">Auto-filled: <b>${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</b> — review and click Add Task again to confirm.</div>`
-          btn.textContent = "Confirm Add Task"
-          return
-        }
-
-        btn.textContent = "Add Task"
-        result.innerHTML = "Creating..."
-        btn.disabled = true
-        const res = await req("POST", "/kanban-create-task", { kanbanApiKey: kanbanApiKey.value, taskName, columnName: column, category: catInput.value.trim(), topic: topicInput.value.trim() })
-        btn.disabled = false
-        if (res.success) {
-          result.innerHTML = `<div class="msg assistant">✅ Task "<b>${escapeHtml(res.taskName)}</b>" created in ${escapeHtml(res.columnName)}<br><span style="opacity:0.7;font-size:12px">Stored under ${escapeHtml(catInput.value)} / ${escapeHtml(topicInput.value)}</span></div>`
-          document.getElementById("kanbanTaskName").value = ""
-        } else {
-          result.innerHTML = `<div class="msg" style="color:red">Error: ${res.error}</div>`
-        }
-      }
-
-      /** Generates an AI rundown of the kanban board with the current tasks. */
-      async function generateKanbanRundown() {
-        document.getElementById("kanbanResults").innerHTML = '<div class="msg">Generating rundown...</div>'
-        const res = await req("POST", "/kanban-rundown", { kanbanApiKey: kanbanApiKey.value, customPrompt: kanbanPrompt.value || undefined })
-        document.getElementById("kanbanResults").innerHTML = `<div class="msg assistant">${parseMarkdown(res.response || res.error)}</div>`
-      }
-
-      /**
-       * Exports all data by calling /export and triggers a JSON file download.
-       * Uses the API key from the input field for authentication.
-       * @returns {Promise<void>}
-       */
-      async function exportData() {
-        const btn = document.getElementById("exportBtn")
-        const result = document.getElementById("exportResult")
-        btn.disabled = true
-        btn.textContent = "Exporting..."
-        result.innerHTML = '<div class="msg">Exporting all data...</div>'
-        try {
-          const res = await req("POST", "/export")
-          const blob = new Blob([JSON.stringify(res, null, 2)], { type: "application/json" })
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement("a")
-          a.href = url
-          a.download = `personal-assistant-${new Date().toISOString().slice(0, 10)}.json`
-          a.click()
-          URL.revokeObjectURL(url)
-          result.innerHTML = `<div class="msg assistant">Exported ${res.categories?.length || 0} categories</div>`
-        } catch (err) {
-          result.innerHTML = `<div class="msg" style="color:red">Error: ${err.message}</div>`
-        }
-        btn.disabled = false
-        btn.textContent = "Export All Data"
-      }
-
-      /**
-       * Reads the selected JSON import file, validates its structure, and shows a preview
-       * of categories/topics/conversations counts. Enables the Import button on success.
-       * @returns {Promise<void>}
-       */
-      async function previewImport() {
-        const fileInput = document.getElementById("importFile")
-        const preview = document.getElementById("importPreview")
-        const importBtn = document.getElementById("importBtn")
-        const file = fileInput.files?.[0]
-        if (!file) {
-          importBtn.disabled = true
-          preview.innerHTML = ""
-          return
-        }
-        try {
-          const text = await file.text()
-          const data = JSON.parse(text)
-          if (!data.categories) throw new Error("Invalid format: missing categories array")
-          const catCount = data.categories.length
-          const topicCount = data.categories.reduce((s, c) => s + (c.topics?.length || 0), 0)
-          const convCount = data.categories.reduce((s, c) => s + c.topics.reduce((s2, t) => s2 + (t.conversations?.length || 0), 0), 0)
-          preview.innerHTML = `<span>Found <b>${catCount}</b> categories, <b>${topicCount}</b> topics, <b>${convCount}</b> conversations. Existing items will be preserved, new ones added.</span>`
-          importBtn.disabled = false
-        } catch (err) {
-          preview.innerHTML = `<span style="color:red">Invalid file: ${err.message}</span>`
-          importBtn.disabled = true
-        }
-      }
-
-      /**
-       * Reads the selected JSON file and sends it to /import. Displays imported counts
-       * and any conflicts (items skipped because they already exist). Refreshes categories
-       * and conversations on success.
-       * @returns {Promise<void>}
-       */
-      async function importData() {
-        const fileInput = document.getElementById("importFile")
-        const result = document.getElementById("importResult")
-        const importBtn = document.getElementById("importBtn")
-        const file = fileInput.files?.[0]
-        if (!file) return
-        importBtn.disabled = true
-        importBtn.textContent = "Importing..."
-        result.innerHTML = '<div class="msg">Importing data...</div>'
-        try {
-          const text = await file.text()
-          const data = JSON.parse(text)
-          const res = await req("POST", "/import", { data })
-          const imported = res.imported || {}
-          const conflicts = res.conflicts || {}
-          const conflictItems = [...(conflicts.categories || []), ...(conflicts.topics || [])]
-          const conflictItemsEscaped = conflictItems.map(i => escapeHtml(String(i))).join(", ")
-          result.innerHTML = `<div class="msg assistant">Imported: ${imported.categories || 0} categories, ${imported.topics || 0} topics, ${imported.conversations || 0} conversations${conflictItems.length ? `<br><span style="opacity:0.7;font-size:13px">Skipped (already exist): ${conflictItemsEscaped}</span>` : ""}</div>`
-          loadCategories()
-          refreshConversations()
-        } catch (err) {
-          result.innerHTML = `<div class="msg" style="color:red">Error: ${err.message}</div>`
-        }
-        importBtn.disabled = false
-        importBtn.textContent = "Import"
-      }
-    </script>
-  </body>
+})();
+</script>
+</body>
 </html>
