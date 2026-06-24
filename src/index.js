@@ -441,9 +441,10 @@ export class AssistantDurableObject extends DurableObject {
         throw new Error(`[${stage}] Invalid id: ${id}`);
 
       const table = type === "category" ? "categories" : "topics";
+      const timestamp = summary === '' ? 0 : Math.floor(Date.now() / 1000);
       this.#db.exec(
-        `UPDATE ${table} SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
-        summary, id
+        `UPDATE ${table} SET summary = ?, updated_at_timestamp = ? WHERE id = ?`,
+        summary, timestamp, id
       );
       const updated = this.#db.exec(`SELECT changes() AS count`).one().count;
       if (!updated) throw new Error(`[${stage}] ${type} not found: ${id}`);
@@ -915,7 +916,7 @@ export default {
         if (!["category", "topic"].includes(body?.type) || typeof body?.id !== "number" || typeof body?.summary !== "string")
           return Response.json({ error: "type, id, and summary are required" }, { status: 400 });
 
-        const result = stub.updateSummary(body.type, body.id, body.summary);
+        const result = await stub.updateSummary(body.type, body.id, body.summary);
         return Response.json(result);
       }
 
