@@ -156,6 +156,77 @@
       font-size: 12px; outline: none;
     }
     .sidebar-search input:focus { border-color: var(--accent); }
+
+    .sidebar-slider {
+      padding: 5px 14px 8px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .sidebar-slider input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    .sidebar-slider input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 1px var(--border);
+    }
+    .sidebar-slider input[type="range"]::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 1px var(--border);
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 3px;
+    }
+    .slider-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      cursor: pointer;
+      user-select: none;
+      transition: color var(--transition);
+    }
+    .slider-label.active {
+      color: var(--text-muted);
+    }
+    .slider-label[data-idx="0"].active { color: var(--green); }
+    .slider-label[data-idx="1"].active { color: var(--yellow); }
+    .slider-label[data-idx="2"].active { color: var(--orange); }
+    .slider-label[data-idx="3"].active { color: var(--text); }
+    .slider-tooltip {
+      position: absolute;
+      top: -6px;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      pointer-events: none;
+      transition: opacity var(--transition), left 100ms ease;
+    }
+    .slider-tooltip.hidden { opacity: 0; }
+
     .sidebar-list {
       flex: 1; overflow-y: auto;
       padding: 6px 0;
@@ -582,6 +653,16 @@
     <div class="sidebar-search">
       <input type="text" id="sidebar-search" placeholder="Search topics…" />
     </div>
+    <div class="sidebar-slider" id="sidebar-slider">
+      <input type="range" id="freshness-slider" min="0" max="3" value="0" step="1">
+      <div class="slider-labels">
+        <span class="slider-label active" data-idx="0">1d</span>
+        <span class="slider-label" data-idx="1">1w</span>
+        <span class="slider-label" data-idx="2">1m</span>
+        <span class="slider-label" data-idx="3">All</span>
+      </div>
+      <div class="slider-tooltip hidden" id="slider-tooltip">&lt; 1 day</div>
+    </div>
     <div class="sidebar-list" id="sidebar-list"></div>
     <div class="sidebar-footer">
       <button class="btn primary" id="new-topic-btn" style="width:100%">New topic</button>
@@ -616,7 +697,7 @@
         <label class="opt-chip" id="note-chip" data-tooltip="Save as a note — no AI response">
           <input type="checkbox" id="note-mode-toggle" />
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Note
+          Just note, don't respond
         </label>
         <div class="context-src-list" id="context-src-chips"></div>
         <button class="suggest-chip" id="suggest-category-btn" data-tooltip="Let AI suggest a category and topic">Suggest topic</button>
@@ -712,6 +793,7 @@
     messages: [],
     loading: false,
     contextOpen: false,
+    sidebarFreshnessLevel: 0,
   };
 
   // ── Persistence ─────────────────────────────────────────────────────────
@@ -901,11 +983,20 @@
       return;
     }
     const f = filter.toLowerCase();
+    const cutoffs = [86400, 86400 * 7, 86400 * 30, Infinity];
+    const cutoff = cutoffs[state.sidebarFreshnessLevel];
+    const now = Date.now() / 1000;
     state.categories.forEach(cat => {
-      const matchedTopics = cat.topics.filter(t =>
-        !f || t.name.toLowerCase().includes(f) || cat.name.toLowerCase().includes(f)
-      );
+      const matchedTopics = cat.topics.filter(t => {
+        if (f && !t.name.toLowerCase().includes(f) && !cat.name.toLowerCase().includes(f)) return false;
+        if (cutoff < Infinity) {
+          if (!t.updated_at_timestamp) return false;
+          if (now - t.updated_at_timestamp >= cutoff) return false;
+        }
+        return true;
+      });
       if (f && !matchedTopics.length) return;
+      if (!f && cutoff < Infinity && !matchedTopics.length) return;
 
       const group = document.createElement("div");
       group.className = "cat-group";
@@ -941,6 +1032,40 @@
   }
 
   sidebarSearch.addEventListener("input", e => renderSidebar(e.target.value));
+
+  const tooltipLabels = ["\u003C 1 day", "\u003C 1 week", "\u003C 1 month", "All time"];
+
+  const sliderEl = document.getElementById("freshness-slider");
+  const tooltipEl = document.getElementById("slider-tooltip");
+  const labelEls = document.querySelectorAll(".slider-label");
+
+  function updateSliderUI() {
+    const val = state.sidebarFreshnessLevel;
+    sliderEl.value = val;
+    tooltipEl.textContent = tooltipLabels[val];
+    tooltipEl.style.left = ((val / 3) * 100) + "%";
+    labelEls.forEach(el => {
+      el.classList.toggle("active", +el.dataset.idx === val);
+    });
+  }
+  updateSliderUI();
+
+  sliderEl.addEventListener("input", () => {
+    state.sidebarFreshnessLevel = +sliderEl.value;
+    updateSliderUI();
+    renderSidebar(sidebarSearch.value);
+  });
+
+  sliderEl.addEventListener("mouseenter", () => tooltipEl.classList.remove("hidden"));
+  sliderEl.addEventListener("mouseleave", () => tooltipEl.classList.add("hidden"));
+
+  labelEls.forEach(el => {
+    el.addEventListener("click", () => {
+      state.sidebarFreshnessLevel = +el.dataset.idx;
+      updateSliderUI();
+      renderSidebar(sidebarSearch.value);
+    });
+  });
 
   browseBtn.addEventListener("click", () => {
     sidebar.classList.toggle("hidden");
