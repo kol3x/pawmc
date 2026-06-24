@@ -156,12 +156,88 @@
       font-size: 12px; outline: none;
     }
     .sidebar-search input:focus { border-color: var(--accent); }
+
+    .sidebar-slider {
+      padding: 5px 14px 8px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .sidebar-slider input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    .sidebar-slider input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 1px var(--border);
+    }
+    .sidebar-slider input[type="range"]::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 1px var(--border);
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 3px;
+    }
+    .slider-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      cursor: pointer;
+      user-select: none;
+      transition: color var(--transition);
+    }
+    .slider-label.active {
+      color: var(--text-muted);
+    }
+    .slider-label[data-idx="0"].active { color: var(--green); }
+    .slider-label[data-idx="1"].active { color: var(--yellow); }
+    .slider-label[data-idx="2"].active { color: var(--orange); }
+    .slider-label[data-idx="3"].active { color: var(--text); }
+    .slider-tooltip {
+      position: absolute;
+      top: -6px;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      pointer-events: none;
+      transition: opacity var(--transition), left 100ms ease;
+    }
+    .slider-tooltip.hidden { opacity: 0; }
+
     .sidebar-list {
       flex: 1; overflow-y: auto;
       padding: 6px 0;
     }
     .sidebar-list::-webkit-scrollbar { width: 4px; }
     .sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .sidebar-empty {
+      font-size: 13px; color: var(--text-dim); text-align: center;
+      padding: 24px 16px; line-height: 1.5;
+    }
+    .sidebar-empty strong { color: var(--text-muted); }
 
     .cat-group { }
     .cat-header {
@@ -511,6 +587,7 @@
       opacity: 0; transition: opacity var(--transition);
     }
     .conv-item:hover .conv-delete-btn { opacity: 1; }
+    #conv-picker-body .conv-item-preview { color: var(--text); font-size: 13px; }
     .conv-delete-btn:hover { color: var(--red); }
 
     /* scrollbar */
@@ -540,6 +617,9 @@
 <!-- Header -->
 <header>
   <span class="logo">Assistant</span>
+  <button class="icon-btn" id="browse-btn" data-tooltip="Browse topics &amp; memory">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+  </button>
 
   <div class="topic-picker" id="topic-picker" data-tooltip="Pick a topic to chat about">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -548,12 +628,6 @@
   </div>
 
   <div class="header-actions">
-    <button class="icon-btn" id="browse-btn" data-tooltip="Browse topics &amp; memory">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-    </button>
-    <button class="icon-btn" id="history-btn" data-tooltip="Conversation history">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-    </button>
     <button class="icon-btn" id="update-summaries-btn" data-tooltip="Refresh all summaries now">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
     </button>
@@ -577,6 +651,16 @@
     <div class="sidebar-search">
       <input type="text" id="sidebar-search" placeholder="Search topics…" />
     </div>
+    <div class="sidebar-slider" id="sidebar-slider">
+      <input type="range" id="freshness-slider" min="0" max="3" value="0" step="1">
+      <div class="slider-labels">
+        <span class="slider-label active" data-idx="0">1d</span>
+        <span class="slider-label" data-idx="1">1w</span>
+        <span class="slider-label" data-idx="2">1m</span>
+        <span class="slider-label" data-idx="3">All</span>
+      </div>
+      <div class="slider-tooltip hidden" id="slider-tooltip">&lt; 1 day</div>
+    </div>
     <div class="sidebar-list" id="sidebar-list"></div>
     <div class="sidebar-footer">
       <button class="btn primary" id="new-topic-btn" style="width:100%">New topic</button>
@@ -596,6 +680,16 @@
       <div class="context-body" id="context-body" style="display:none"></div>
     </div>
 
+    <!-- Conversation picker -->
+    <div id="conversation-picker" style="display:none">
+      <div class="context-toggle" id="conv-picker-toggle">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="conv-picker-label">Conversations</span>
+        <svg class="chevron" id="conv-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+      </div>
+      <div class="context-body" id="conv-picker-body" style="display:none"></div>
+    </div>
+
     <!-- Messages -->
     <div class="messages" id="messages">
       <div class="empty-state" id="empty-state">
@@ -611,7 +705,7 @@
         <label class="opt-chip" id="note-chip" data-tooltip="Save as a note — no AI response">
           <input type="checkbox" id="note-mode-toggle" />
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Note
+          Just note, don't respond
         </label>
         <div class="context-src-list" id="context-src-chips"></div>
         <button class="suggest-chip" id="suggest-category-btn" data-tooltip="Let AI suggest a category and topic">Suggest topic</button>
@@ -676,10 +770,6 @@
   <div class="modal">
     <h3>Settings</h3>
     <div>
-      <label>API endpoint</label>
-      <input type="text" id="settings-endpoint" placeholder="https://your-worker.workers.dev" />
-    </div>
-    <div>
       <label>API key</label>
       <input type="password" id="settings-api-key" placeholder="Bearer token" />
     </div>
@@ -711,16 +801,18 @@
     messages: [],
     loading: false,
     contextOpen: false,
+    sidebarFreshnessLevel: 0,
   };
 
   // ── Persistence ─────────────────────────────────────────────────────────
   function loadSettings() {
     state.apiKey = localStorage.getItem("pa_api_key") || "";
-    state.endpoint = localStorage.getItem("pa_endpoint") || "";
+    state.endpoint = window.location.origin;
+    state.sidebarFreshnessLevel = +(localStorage.getItem("pa_freshness") || 0);
   }
   function saveSettings() {
     localStorage.setItem("pa_api_key", state.apiKey);
-    localStorage.setItem("pa_endpoint", state.endpoint);
+    localStorage.setItem("pa_freshness", state.sidebarFreshnessLevel);
   }
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
@@ -731,8 +823,12 @@
   const topicPickerEl   = $("topic-picker");
   const topicPickerLbl  = $("topic-picker-label");
   const browseBtn       = $("browse-btn");
-  const historyBtn      = $("history-btn");
   const updateSumBtn    = $("update-summaries-btn");
+  const convPicker       = $("conversation-picker");
+  const convPickerToggle = $("conv-picker-toggle");
+  const convPickerChevron= $("conv-picker-chevron");
+  const convPickerBody   = $("conv-picker-body");
+  const convPickerLbl    = $("conv-picker-label");
   const settingsBtn     = $("settings-btn");
   const sidebar         = $("sidebar");
   const sidebarCloseBtn = $("sidebar-close-btn");
@@ -827,7 +923,7 @@
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   loadSettings();
-  if (state.apiKey && state.endpoint) {
+  if (state.apiKey) {
     authOverlay.style.display = "none";
     init();
   } else {
@@ -841,20 +937,8 @@
   function handleAuth() {
     const val = apiKeyInput.value.trim();
     if (!val) { toast("Enter your API key", "error"); return; }
-    // if user pastes full endpoint+key or just key
-    if (val.startsWith("http")) {
-      const parts = val.split(" ");
-      state.endpoint = parts[0].replace(/\/$/, "");
-      state.apiKey = parts[1] || "";
-    } else {
-      state.apiKey = val;
-      // prompt for endpoint if not saved
-      if (!state.endpoint) {
-        const ep = prompt("API endpoint URL (e.g. https://your-worker.workers.dev):");
-        if (!ep) return;
-        state.endpoint = ep.trim().replace(/\/$/, "");
-      }
-    }
+    state.apiKey = val;
+    state.endpoint = window.location.origin;
     saveSettings();
     authOverlay.style.display = "none";
     init();
@@ -908,12 +992,25 @@
   // ── Sidebar ────────────────────────────────────────────────────────────────
   function renderSidebar(filter = "") {
     sidebarList.innerHTML = "";
+    if (!state.categories.length) {
+      sidebarList.innerHTML = `<div class="sidebar-empty">No topics yet. Start a conversation or click <strong>New topic</strong> above to create one.</div>`;
+      return;
+    }
     const f = filter.toLowerCase();
+    const cutoffs = [86400, 86400 * 7, 86400 * 30, Infinity];
+    const cutoff = cutoffs[state.sidebarFreshnessLevel];
+    const now = Date.now() / 1000;
     state.categories.forEach(cat => {
-      const matchedTopics = cat.topics.filter(t =>
-        !f || t.name.toLowerCase().includes(f) || cat.name.toLowerCase().includes(f)
-      );
+      const matchedTopics = cat.topics.filter(t => {
+        if (f && !t.name.toLowerCase().includes(f) && !cat.name.toLowerCase().includes(f)) return false;
+        if (cutoff < Infinity) {
+          if (!t.updated_at_timestamp) return false;
+          if (now - t.updated_at_timestamp >= cutoff) return false;
+        }
+        return true;
+      });
       if (f && !matchedTopics.length) return;
+      if (!f && cutoff < Infinity && !matchedTopics.length) return;
 
       const group = document.createElement("div");
       group.className = "cat-group";
@@ -950,8 +1047,47 @@
 
   sidebarSearch.addEventListener("input", e => renderSidebar(e.target.value));
 
+  const tooltipLabels = ["\u003C 1 day", "\u003C 1 week", "\u003C 1 month", "All time"];
+
+  const sliderEl = document.getElementById("freshness-slider");
+  const tooltipEl = document.getElementById("slider-tooltip");
+  const labelEls = document.querySelectorAll(".slider-label");
+
+  function updateSliderUI() {
+    const val = state.sidebarFreshnessLevel;
+    sliderEl.value = val;
+    tooltipEl.textContent = tooltipLabels[val];
+    tooltipEl.style.left = ((val / 3) * 100) + "%";
+    labelEls.forEach(el => {
+      el.classList.toggle("active", +el.dataset.idx === val);
+    });
+  }
+  updateSliderUI();
+
+  sliderEl.addEventListener("input", () => {
+    state.sidebarFreshnessLevel = +sliderEl.value;
+    updateSliderUI();
+    renderSidebar(sidebarSearch.value);
+    saveSettings();
+  });
+
+  sliderEl.addEventListener("mouseenter", () => tooltipEl.classList.remove("hidden"));
+  sliderEl.addEventListener("mouseleave", () => tooltipEl.classList.add("hidden"));
+
+  labelEls.forEach(el => {
+    el.addEventListener("click", () => {
+      state.sidebarFreshnessLevel = +el.dataset.idx;
+      updateSliderUI();
+      renderSidebar(sidebarSearch.value);
+      saveSettings();
+    });
+  });
+
   browseBtn.addEventListener("click", () => {
     sidebar.classList.toggle("hidden");
+    if (!sidebar.classList.contains("hidden")) {
+      renderSidebar(sidebarSearch.value);
+    }
   });
   sidebarCloseBtn.addEventListener("click", () => sidebar.classList.add("hidden"));
 
@@ -1020,7 +1156,7 @@
   });
 
   // ── Select topic ────────────────────────────────────────────────────────────
-  function selectTopic(cat, t) {
+  async function selectTopic(cat, t) {
     state.category = cat.name;
     state.topic = t.name;
     state.categoryId = cat.id || null;
@@ -1035,6 +1171,23 @@
     renderSidebar(sidebarSearch.value);
     sidebar.classList.add("hidden");
     msgInput.focus();
+
+    // Fetch conversations for this topic
+    const params = new URLSearchParams();
+    params.set("category", state.category);
+    params.set("topic", state.topic);
+    try {
+      const conversations = await api("GET", `/conversations?${params}`);
+      if (conversations.length === 1) {
+        loadConversation(conversations[0].id);
+      } else if (conversations.length > 1) {
+        renderConvPicker(conversations);
+      } else {
+        hideConvPicker();
+      }
+    } catch {
+      hideConvPicker();
+    }
   }
 
   // ── Context preview ───────────────────────────────────────────────────────
@@ -1145,6 +1298,60 @@
     contextBody.style.display = state.contextOpen ? "flex" : "none";
     contextBody.style.flexDirection = "column";
     contextChevron.classList.toggle("open", state.contextOpen);
+  });
+
+  // ── Conversation picker ─────────────────────────────────────────────────────
+  function renderConvPicker(conversations) {
+    convPicker.style.display = "block";
+    convPickerBody.innerHTML = "";
+
+    conversations.forEach(conv => {
+      const item = document.createElement("div");
+      item.className = "conv-item";
+      item.innerHTML = `
+        <span class="conv-item-time">${relativeTime(conv.created_at)}</span>
+        <div class="conv-item-body">
+          <div class="conv-item-preview">${escHtml(conv.last_message || "—")}</div>
+        </div>
+        <button class="conv-delete-btn" title="Delete conversation" data-id="${conv.id}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      `;
+      item.querySelector(".conv-item-body").addEventListener("click", () => loadConversation(conv.id));
+      item.querySelector(".conv-delete-btn").addEventListener("click", async e => {
+        e.stopPropagation();
+        if (!confirm("Delete this conversation?")) return;
+        try {
+          await api("DELETE", `/conversation?id=${conv.id}`);
+          const conversations = await api("GET", `/conversations?category=${encodeURIComponent(state.category)}&topic=${encodeURIComponent(state.topic)}`);
+          if (conversations.length > 1) {
+            renderConvPicker(conversations);
+          } else if (conversations.length === 1) {
+            loadConversation(conversations[0].id);
+          } else {
+            hideConvPicker();
+          }
+          toast("Conversation deleted", "success");
+        } catch (err) {
+          toast("Couldn't delete — " + err.message, "error");
+        }
+      });
+      convPickerBody.appendChild(item);
+    });
+
+    convPickerBody.style.display = "none";
+    convPickerChevron.classList.remove("open");
+  }
+
+  function hideConvPicker() {
+    convPicker.style.display = "none";
+  }
+
+  convPickerToggle.addEventListener("click", () => {
+    const isOpen = convPickerBody.style.display !== "none";
+    convPickerBody.style.display = isOpen ? "none" : "flex";
+    convPickerBody.style.flexDirection = "column";
+    convPickerChevron.classList.toggle("open", !isOpen);
   });
 
   // ── Messages ───────────────────────────────────────────────────────────────
@@ -1315,10 +1522,6 @@
   });
 
   // ── History ─────────────────────────────────────────────────────────────────
-  historyBtn.addEventListener("click", async () => {
-    historyModal.classList.remove("hidden");
-    await refreshHistory();
-  });
   $("history-modal-close").addEventListener("click", () => historyModal.classList.add("hidden"));
 
   async function refreshHistory() {
@@ -1384,6 +1587,8 @@
       topicPickerLbl.textContent = `${conv.category} / ${conv.topic}`;
       topicPickerLbl.classList.remove("placeholder");
       state.messages = conv.messages;
+      convPickerBody.style.display = "none";
+      convPickerChevron.classList.remove("open");
 
       renderContextPreview(cat, t);
       renderMessages();
@@ -1396,17 +1601,15 @@
 
   // ── Settings ────────────────────────────────────────────────────────────────
   settingsBtn.addEventListener("click", () => {
-    $("settings-endpoint").value = state.endpoint;
     $("settings-api-key").value = state.apiKey;
     settingsModal.classList.remove("hidden");
   });
   $("settings-cancel").addEventListener("click", () => settingsModal.classList.add("hidden"));
   $("settings-save").addEventListener("click", () => {
-    const ep = $("settings-endpoint").value.trim().replace(/\/$/, "");
     const key = $("settings-api-key").value.trim();
-    if (!ep || !key) { toast("Both endpoint and API key are required", "error"); return; }
-    state.endpoint = ep;
+    if (!key) { toast("API key is required", "error"); return; }
     state.apiKey = key;
+    state.endpoint = window.location.origin;
     saveSettings();
     settingsModal.classList.add("hidden");
     toast("Settings saved", "success");
