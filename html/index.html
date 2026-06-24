@@ -587,6 +587,7 @@
       opacity: 0; transition: opacity var(--transition);
     }
     .conv-item:hover .conv-delete-btn { opacity: 1; }
+    #conv-picker-body .conv-item-preview { color: var(--text); font-size: 13px; }
     .conv-delete-btn:hover { color: var(--red); }
 
     /* scrollbar */
@@ -626,9 +627,6 @@
   <div class="header-actions">
     <button class="icon-btn" id="browse-btn" data-tooltip="Browse topics &amp; memory">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-    </button>
-    <button class="icon-btn" id="history-btn" data-tooltip="Conversation history">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     </button>
     <button class="icon-btn" id="update-summaries-btn" data-tooltip="Refresh all summaries now">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -680,6 +678,16 @@
         <svg class="chevron" id="context-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
       </div>
       <div class="context-body" id="context-body" style="display:none"></div>
+    </div>
+
+    <!-- Conversation picker -->
+    <div id="conversation-picker" style="display:none">
+      <div class="context-toggle" id="conv-picker-toggle">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="conv-picker-label">Conversations</span>
+        <svg class="chevron" id="conv-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+      </div>
+      <div class="context-body" id="conv-picker-body" style="display:none"></div>
     </div>
 
     <!-- Messages -->
@@ -813,8 +821,12 @@
   const topicPickerEl   = $("topic-picker");
   const topicPickerLbl  = $("topic-picker-label");
   const browseBtn       = $("browse-btn");
-  const historyBtn      = $("history-btn");
   const updateSumBtn    = $("update-summaries-btn");
+  const convPicker       = $("conversation-picker");
+  const convPickerToggle = $("conv-picker-toggle");
+  const convPickerChevron= $("conv-picker-chevron");
+  const convPickerBody   = $("conv-picker-body");
+  const convPickerLbl    = $("conv-picker-label");
   const settingsBtn     = $("settings-btn");
   const sidebar         = $("sidebar");
   const sidebarCloseBtn = $("sidebar-close-btn");
@@ -1140,7 +1152,7 @@
   });
 
   // ── Select topic ────────────────────────────────────────────────────────────
-  function selectTopic(cat, t) {
+  async function selectTopic(cat, t) {
     state.category = cat.name;
     state.topic = t.name;
     state.categoryId = cat.id || null;
@@ -1155,6 +1167,23 @@
     renderSidebar(sidebarSearch.value);
     sidebar.classList.add("hidden");
     msgInput.focus();
+
+    // Fetch conversations for this topic
+    const params = new URLSearchParams();
+    params.set("category", state.category);
+    params.set("topic", state.topic);
+    try {
+      const conversations = await api("GET", `/conversations?${params}`);
+      if (conversations.length === 1) {
+        loadConversation(conversations[0].id);
+      } else if (conversations.length > 1) {
+        renderConvPicker(conversations);
+      } else {
+        hideConvPicker();
+      }
+    } catch {
+      hideConvPicker();
+    }
   }
 
   // ── Context preview ───────────────────────────────────────────────────────
@@ -1265,6 +1294,60 @@
     contextBody.style.display = state.contextOpen ? "flex" : "none";
     contextBody.style.flexDirection = "column";
     contextChevron.classList.toggle("open", state.contextOpen);
+  });
+
+  // ── Conversation picker ─────────────────────────────────────────────────────
+  function renderConvPicker(conversations) {
+    convPicker.style.display = "block";
+    convPickerBody.innerHTML = "";
+
+    conversations.forEach(conv => {
+      const item = document.createElement("div");
+      item.className = "conv-item";
+      item.innerHTML = `
+        <span class="conv-item-time">${relativeTime(conv.created_at)}</span>
+        <div class="conv-item-body">
+          <div class="conv-item-preview">${escHtml(conv.last_message || "—")}</div>
+        </div>
+        <button class="conv-delete-btn" title="Delete conversation" data-id="${conv.id}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      `;
+      item.querySelector(".conv-item-body").addEventListener("click", () => loadConversation(conv.id));
+      item.querySelector(".conv-delete-btn").addEventListener("click", async e => {
+        e.stopPropagation();
+        if (!confirm("Delete this conversation?")) return;
+        try {
+          await api("DELETE", `/conversation?id=${conv.id}`);
+          const conversations = await api("GET", `/conversations?category=${encodeURIComponent(state.category)}&topic=${encodeURIComponent(state.topic)}`);
+          if (conversations.length > 1) {
+            renderConvPicker(conversations);
+          } else if (conversations.length === 1) {
+            loadConversation(conversations[0].id);
+          } else {
+            hideConvPicker();
+          }
+          toast("Conversation deleted", "success");
+        } catch (err) {
+          toast("Couldn't delete — " + err.message, "error");
+        }
+      });
+      convPickerBody.appendChild(item);
+    });
+
+    convPickerBody.style.display = "none";
+    convPickerChevron.classList.remove("open");
+  }
+
+  function hideConvPicker() {
+    convPicker.style.display = "none";
+  }
+
+  convPickerToggle.addEventListener("click", () => {
+    const isOpen = convPickerBody.style.display !== "none";
+    convPickerBody.style.display = isOpen ? "none" : "flex";
+    convPickerBody.style.flexDirection = "column";
+    convPickerChevron.classList.toggle("open", !isOpen);
   });
 
   // ── Messages ───────────────────────────────────────────────────────────────
@@ -1435,10 +1518,6 @@
   });
 
   // ── History ─────────────────────────────────────────────────────────────────
-  historyBtn.addEventListener("click", async () => {
-    historyModal.classList.remove("hidden");
-    await refreshHistory();
-  });
   $("history-modal-close").addEventListener("click", () => historyModal.classList.add("hidden"));
 
   async function refreshHistory() {
@@ -1504,6 +1583,8 @@
       topicPickerLbl.textContent = `${conv.category} / ${conv.topic}`;
       topicPickerLbl.classList.remove("placeholder");
       state.messages = conv.messages;
+      convPickerBody.style.display = "none";
+      convPickerChevron.classList.remove("open");
 
       renderContextPreview(cat, t);
       renderMessages();
