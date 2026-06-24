@@ -676,10 +676,6 @@
   <div class="modal">
     <h3>Settings</h3>
     <div>
-      <label>API endpoint</label>
-      <input type="text" id="settings-endpoint" placeholder="https://your-worker.workers.dev" />
-    </div>
-    <div>
       <label>API key</label>
       <input type="password" id="settings-api-key" placeholder="Bearer token" />
     </div>
@@ -716,11 +712,10 @@
   // ── Persistence ─────────────────────────────────────────────────────────
   function loadSettings() {
     state.apiKey = localStorage.getItem("pa_api_key") || "";
-    state.endpoint = localStorage.getItem("pa_endpoint") || "";
+    state.endpoint = window.location.origin;
   }
   function saveSettings() {
     localStorage.setItem("pa_api_key", state.apiKey);
-    localStorage.setItem("pa_endpoint", state.endpoint);
   }
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
@@ -827,7 +822,7 @@
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   loadSettings();
-  if (state.apiKey && state.endpoint) {
+  if (state.apiKey) {
     authOverlay.style.display = "none";
     init();
   } else {
@@ -841,20 +836,8 @@
   function handleAuth() {
     const val = apiKeyInput.value.trim();
     if (!val) { toast("Enter your API key", "error"); return; }
-    // if user pastes full endpoint+key or just key
-    if (val.startsWith("http")) {
-      const parts = val.split(" ");
-      state.endpoint = parts[0].replace(/\/$/, "");
-      state.apiKey = parts[1] || "";
-    } else {
-      state.apiKey = val;
-      // prompt for endpoint if not saved
-      if (!state.endpoint) {
-        const ep = prompt("API endpoint URL (e.g. https://your-worker.workers.dev):");
-        if (!ep) return;
-        state.endpoint = ep.trim().replace(/\/$/, "");
-      }
-    }
+    state.apiKey = val;
+    state.endpoint = window.location.origin;
     saveSettings();
     authOverlay.style.display = "none";
     init();
@@ -1396,17 +1379,15 @@
 
   // ── Settings ────────────────────────────────────────────────────────────────
   settingsBtn.addEventListener("click", () => {
-    $("settings-endpoint").value = state.endpoint;
     $("settings-api-key").value = state.apiKey;
     settingsModal.classList.remove("hidden");
   });
   $("settings-cancel").addEventListener("click", () => settingsModal.classList.add("hidden"));
   $("settings-save").addEventListener("click", () => {
-    const ep = $("settings-endpoint").value.trim().replace(/\/$/, "");
     const key = $("settings-api-key").value.trim();
-    if (!ep || !key) { toast("Both endpoint and API key are required", "error"); return; }
-    state.endpoint = ep;
+    if (!key) { toast("API key is required", "error"); return; }
     state.apiKey = key;
+    state.endpoint = window.location.origin;
     saveSettings();
     settingsModal.classList.add("hidden");
     toast("Settings saved", "success");
