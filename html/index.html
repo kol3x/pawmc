@@ -162,6 +162,11 @@
     }
     .sidebar-list::-webkit-scrollbar { width: 4px; }
     .sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .sidebar-empty {
+      font-size: 13px; color: var(--text-dim); text-align: center;
+      padding: 24px 16px; line-height: 1.5;
+    }
+    .sidebar-empty strong { color: var(--text-muted); }
 
     .cat-group { }
     .cat-header {
@@ -891,6 +896,10 @@
   // ── Sidebar ────────────────────────────────────────────────────────────────
   function renderSidebar(filter = "") {
     sidebarList.innerHTML = "";
+    if (!state.categories.length) {
+      sidebarList.innerHTML = `<div class="sidebar-empty">No topics yet. Start a conversation or click <strong>New topic</strong> above to create one.</div>`;
+      return;
+    }
     const f = filter.toLowerCase();
     state.categories.forEach(cat => {
       const matchedTopics = cat.topics.filter(t =>
@@ -935,6 +944,9 @@
 
   browseBtn.addEventListener("click", () => {
     sidebar.classList.toggle("hidden");
+    if (!sidebar.classList.contains("hidden")) {
+      renderSidebar(sidebarSearch.value);
+    }
   });
   sidebarCloseBtn.addEventListener("click", () => sidebar.classList.add("hidden"));
 
