@@ -1,5 +1,4 @@
 import { DurableObject } from "cloudflare:workers";
-import { resolve as resolveContexts, list as listContextSources } from "./context.js";
 
 /**
  * Cloudflare Worker that uses SQLite-backed Durable Object. Works as a personal LLM assistant. It stores conversations and uses summed up context when generating responses.
@@ -15,8 +14,8 @@ import { resolve as resolveContexts, list as listContextSources } from "./contex
  * - Stick to JSDoc for specifications, documentation, and type definitions.
  * - Robust error handling and logging techniques with succinct messages. Wrapping each data processing stage in a try-catch block, validating all inputs and outputs, and using `INFO` and `ERROR` levels with detailed contextual information, such as processing stage, task name, etc.
  * - Concise code with minimal formatting and indentation, which prioritizes descriptive element naming and log messages over inline comments to achieve readability.
-
  */
+
 /**
  * @class AssistantDurableObject
  * @augments {DurableObject}
@@ -113,12 +112,11 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} category
    * @param {string} topic
    * @param {string} userMessage
-   * @param {string[]} [contextSources] - Optional names of context providers to inject (e.g. "kanban-rundown")
    * @param {boolean} [noteMode] - If true, skips full AI response and just acknowledges
    * @param {Array<{category: string, topic?: string}>} [contextCategories] - Additional categories/topics to pull context from
    * @returns {Promise<{response: string, conversationId: number}>}
    */
-  async chat(category, topic, userMessage, contextSources = [], noteMode = false, contextCategories = []) {
+  async chat(category, topic, userMessage, noteMode = false, contextCategories = []) {
     const stage = "chat";
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
@@ -169,11 +167,6 @@ export class AssistantDurableObject extends DurableObject {
           if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
           if (!contextParts.length) contextParts.push("You have no prior context about this topic. Ask the user about their situation if needed.");
 
-          if (contextSources.length) {
-            const injected = await resolveContexts(this.env, this, contextSources);
-            contextParts.push(...injected);
-          }
-
           if (contextCategories.length) {
             for (const ctx of contextCategories) {
               try {
@@ -219,61 +212,7 @@ export class AssistantDurableObject extends DurableObject {
       }
       if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
 
-      const scraperAvailable = this.env.SCRAPER;
-      const allowTaskCreation = this.env.KANBANFLOW_API_KEY && contextSources.includes("kanban-create");
-      let modifiedMessage = assistantMessage;
-      let boardColumnsCache = null;
-      const getColumnId = async (colName) => {
-        if (!boardColumnsCache) {
-          const bootstrap = await this.#scraper();
-          boardColumnsCache = bootstrap.columns;
-        }
-        const column = boardColumnsCache.find(c => c.name === colName);
-        if (!column) throw new Error(`Column not found: ${colName}`);
-        return column.uniqueId;
-      };
-
-      const blockRegex = /⧉ CREATE TASK\n([\s\S]*?)(?:⧉ END|\n\n|$)/g;
-      let blockMatch;
-      while ((blockMatch = blockRegex.exec(assistantMessage)) !== null) {
-        const raw = blockMatch[1].trim();
-        if (!raw) continue;
-        const nameMatch = raw.match(/^Name:\s*(.+)$/m);
-        const colMatch = raw.match(/^Column:\s*(.+)$/m);
-        const descMatch = raw.match(/^Description:\s*(.+)$/m);
-        const taskName = nameMatch?.[1]?.trim();
-        const columnName = colMatch?.[1]?.trim();
-        const description = descMatch?.[1]?.trim();
-        if (allowTaskCreation && taskName) {
-          try {
-            const columnId = columnName ? await getColumnId(columnName) : undefined;
-            await this.createKanbanTask(taskName, columnId, description);
-            modifiedMessage = modifiedMessage.replace(blockMatch[0], `Task created: "${taskName}"${columnName ? ` in ${columnName}` : ""}`);
-          } catch (err) {
-            modifiedMessage = modifiedMessage.replace(blockMatch[0], `Failed to create task "${taskName}": ${err.message}`);
-          }
-        }
-      }
-
-      const inlineRegex = /⧉ CREATE TASK:\s*(.+?)\s*→\s*(.+?)(?:\n|$)/g;
-      let inlineMatch;
-      while ((inlineMatch = inlineRegex.exec(assistantMessage)) !== null) {
-        if (modifiedMessage.includes(inlineMatch[0])) {
-          const taskName = inlineMatch[1].trim();
-          const columnName = inlineMatch[2].trim();
-          if (allowTaskCreation && taskName && columnName) {
-            try {
-              const columnId = await getColumnId(columnName);
-              await this.createKanbanTask(taskName, columnId);
-              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `Task created: "${taskName}" in ${columnName}`);
-            } catch (err) {
-              modifiedMessage = modifiedMessage.replace(inlineMatch[0], `Failed to create task "${taskName}": ${err.message}`);
-            }
-          }
-        }
-      }
-
-      messages.push({ role: "assistant", content: modifiedMessage });
+      messages.push({ role: "assistant", content: assistantMessage });
 
       const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200);
       this.#db.exec(
@@ -282,7 +221,7 @@ export class AssistantDurableObject extends DurableObject {
       );
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`);
 
-      return { response: modifiedMessage, conversationId };
+      return { response: assistantMessage, conversationId };
     } catch (err) {
       console.error(`[ERROR][${stage}] ${err.message}`);
       throw err;
@@ -569,60 +508,15 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
+  /** 
+   * Fetches tasks from KanbanFlow using the SCRAPER service binding.
+   */
   #scraper() {
     if (!this.env.SCRAPER) throw new Error("SCRAPER service binding not configured");
     return this.env.SCRAPER.fetch("http://internal/").then(res => {
       if (!res.ok) throw new Error(`Scraper error: ${res.status} ${res.statusText}`);
       return res.json();
     }).then(data => data.tasks);
-  }
-
-  /**
-   * Fetches the KanbanFlow board structure including column names and IDs.
-   * @param {string} kanbanApiKey
-   * @returns {Promise<{columns: Array<{name: string, uniqueId: string}>, name: string}>}
-   */
-  async getKanbanBoard() {
-    const stage = "getKanbanBoard";
-    try {
-      const bootstrap = await this.#scraper();
-      console.log(`[INFO][${stage}] Board fetched: ${bootstrap.boardName}, columns=${bootstrap.columns.length}`);
-      return { name: bootstrap.boardName, columns: bootstrap.columns };
-    } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
-    }
-  }
-
-  /**
-   * Creates a new task in the specified KanbanFlow column.
-   * @param {string} kanbanApiKey
-   * @param {string} taskName
-   * @param {string} [columnId] - Pre-resolved KanbanFlow column unique ID
-   * @param {string} [description]
-   * @returns {Promise<{success: boolean, taskId: string, taskName: string}>}
-   */
-  async createKanbanTask(taskName, columnId, description) {
-    const stage = "createKanbanTask";
-    try {
-      const key = this.env.KANBANFLOW_API_KEY;
-      if (!key) throw new Error("KANBANFLOW_API_KEY not configured for task creation");
-      const body = { name: taskName };
-      if (columnId?.trim()) body.columnId = columnId.trim();
-      if (description?.trim()) body.description = description.trim();
-      const res = await fetch("https://kanbanflow.com/api/v1/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify(body)
-      });
-      if (!res.ok) throw new Error(`KanbanFlow create task error: ${res.status} ${res.statusText}`);
-      const result = await res.json();
-      console.log(`[INFO][${stage}] Task created: ${taskName}${columnId ? ` in column ${columnId}` : ""}`);
-      return { success: true, taskId: result.taskId, taskName };
-    } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
-    }
   }
 
   async #fetchAndFormatKanbanTasks() {
@@ -649,26 +543,8 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
-   * Returns raw KanbanFlow tasks grouped by column, formatted as markdown.
-   * @param {string} kanbanApiKey
-   * @returns {Promise<{tasks: string}>}
-   */
-  async getKanbanTasks() {
-    const stage = "getKanbanTasks";
-    try {
-      const tasks = await this.#fetchAndFormatKanbanTasks();
-      console.log(`[INFO][${stage}] Tasks formatted`);
-      return { tasks: tasks || "No tasks found." };
-    } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
-    }
-  }
-
-  /**
    * Fetches all tasks from KanbanFlow, groups by column, and sends to AI
    * for a brief rundown and advice on what to start working on.
-   * @param {string} kanbanApiKey
    * @param {string} [customPrompt]
    * @returns {Promise<{response: string}>}
    */
@@ -701,9 +577,6 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
-   * Suggests a category and topic for a kanban task using AI, checking existing categories first.
-   * @param {string} kanbanApiKey
-   * @param {string} taskName
    * Suggests a category and topic for a chat message using AI, checking existing pairs first.
    * @param {string} message
    * @returns {Promise<{category: string, topic: string}>}
@@ -814,12 +687,6 @@ export default {
     }
   },
 
-  /**
-   * @param {Request} request
-   * @param {WorkerEnvironment} env
-   * @param {ExecutionContext} ctx
-   * @returns {Promise<Response>}
-   */
   async fetch(request, env, ctx) {
     const stage = "fetch";
     try {
@@ -833,23 +700,18 @@ export default {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
 
-      if (request.method === "GET" && url.pathname === "/context-sources") {
-        return Response.json(listContextSources());
-      }
-
       if (request.method === "POST" && url.pathname === "/chat") {
         let body;
         try { body = await request.json(); } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
-        const { category, topic, message, contextSources: rawContextSources, noteMode, contextCategories: rawContextCategories } = body ?? {};
-        const contextSources = Array.isArray(rawContextSources) ? rawContextSources : [];
+        const { category, topic, message, noteMode, contextCategories: rawContextCategories } = body ?? {};
         const contextCategories = Array.isArray(rawContextCategories) ? rawContextCategories : [];
         if (!category?.trim() || !topic?.trim() || !message?.trim())
           return Response.json({ error: "category, topic, and message are required" }, { status: 400 });
 
-        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextSources=${JSON.stringify(contextSources)}, contextCategories=${JSON.stringify(contextCategories)}, noteMode=${!!noteMode}`);
-        const result = await stub.chat(category, topic, message, contextSources, !!noteMode, contextCategories);
+        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextCategories=${JSON.stringify(contextCategories)}, noteMode=${!!noteMode}`);
+        const result = await stub.chat(category, topic, message, !!noteMode, contextCategories);
         return Response.json(result);
       }
 
@@ -894,18 +756,6 @@ export default {
         await stub.updateAllSummaries();
         console.log(`[INFO][${stage}] Manual summary update completed`);
         return Response.json({ success: true });
-      }
-
-      if (request.method === "POST" && url.pathname === "/suggest-category") {
-        let body;
-        try { body = await request.json(); } catch {
-          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-        }
-        if (!body?.message?.trim())
-          return Response.json({ error: "message is required" }, { status: 400 });
-
-        const result = await stub.suggestCategory(body.message.trim());
-        return Response.json(result);
       }
 
       if (request.method === "POST" && url.pathname === "/update-summary") {
