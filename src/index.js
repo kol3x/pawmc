@@ -545,10 +545,9 @@ export class AssistantDurableObject extends DurableObject {
   /**
    * Fetches all tasks from KanbanFlow, groups by column, and sends to AI
    * for a brief rundown and advice on what to start working on.
-   * @param {string} [customPrompt]
    * @returns {Promise<{response: string}>}
    */
-  async generateKanbanRundown(customPrompt) {
+  async generateKanbanRundown() {
     const stage = "generateKanbanRundown";
     try {
       const taskReport = await this.#fetchAndFormatKanbanTasks();
@@ -557,14 +556,10 @@ export class AssistantDurableObject extends DurableObject {
         return { response: "No tasks found on your KanbanFlow board." };
       }
 
-      const defaultPrompt = `Here are my current KanbanFlow board tasks:\n\n${taskReport}\n\nPlease provide:\n1. A brief rundown of what I'm working on\n2. Advice on what task I should start working on first and why`;
-
-      const prompt = customPrompt?.trim()
-        ? `${customPrompt.trim()}\n\nTasks:\n${taskReport}`
-        : defaultPrompt;
+      const prompt = `Here are my current KanbanFlow board tasks:\n\n${taskReport}\n\nPlease provide:\n1. A brief rundown of what I'm working on\n2. Advice on what task I should start working on first and why\nCurrent date: ${new Date().toISOString()}`;
 
       const response = await this.#runAI(
-        "You are a productive task manager. Be concise and direct.",
+        this.env.AI_SYSTEM_INSTRUCTION,
         prompt
       );
 
