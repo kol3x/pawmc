@@ -21,6 +21,10 @@ jobs:
             python3 -c "import sys,json; print(json.load(sys.stdin)['result']['email'])")
           SUBDOMAIN="${EMAIL%@*}"
           echo "CLOUDFLARE_SUBDOMAIN=$SUBDOMAIN" >> $GITHUB_ENV
+      - name: Configure KanbanFlow scraper binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 .github/configure_scraper.py
       - run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
