@@ -61,18 +61,16 @@ def main():
 
     account_id = accounts[0]["id"]
 
-    # Check whether the kanbanflow-scraper worker exists.
-    try:
-        cf_get(token, f"/accounts/{account_id}/workers/scripts/kanbanflow-scraper")
+    # Check whether the kanbanflow-scraper worker exists (list endpoint returns JSON).
+    resp = cf_get(token, f"/accounts/{account_id}/workers/scripts?per_page=50")
+    script_ids = {s["id"] for s in resp.get("result", []) if s.get("id")}
+    if "kanbanflow-scraper" in script_ids:
         print("kanbanflow-scraper found — deploying with SCRAPER service binding.")
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            print(
-                "kanbanflow-scraper not found — removing SCRAPER service binding for this deploy."
-            )
-            strip_scraper_binding()
-        else:
-            raise
+    else:
+        print(
+            "kanbanflow-scraper not found — removing SCRAPER service binding for this deploy."
+        )
+        strip_scraper_binding()
 
 
 def strip_scraper_binding():
