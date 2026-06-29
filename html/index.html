@@ -498,16 +498,6 @@
       display: flex; gap: 6px; flex-wrap: wrap;
     }
 
-    /* suggest chip */
-    .suggest-chip {
-      background: none; border: 1px dashed var(--border);
-      border-radius: 20px; padding: 3px 10px;
-      font-size: 11px; color: var(--text-dim);
-      cursor: pointer;
-      transition: all var(--transition);
-    }
-    .suggest-chip:hover { border-color: var(--accent); color: var(--accent); }
-
     /* ── Modal ── */
     .modal-backdrop {
       position: fixed; inset: 0;
@@ -695,7 +685,7 @@
       <div class="empty-state" id="empty-state">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <h3>Pick a topic to start</h3>
-        <p>Select a topic from the header, or just type — the assistant will suggest one for you.</p>
+        <p>Select a topic from the header.</p>
       </div>
     </div>
 
@@ -708,7 +698,6 @@
           Just note, don't respond
         </label>
         <div class="context-src-list" id="context-src-chips"></div>
-        <button class="suggest-chip" id="suggest-category-btn" data-tooltip="Let AI suggest a category and topic">Suggest topic</button>
       </div>
       <div class="input-row" style="margin-top:8px">
         <textarea id="msg-input" placeholder="Type a message…" rows="1"></textarea>
@@ -846,7 +835,6 @@
   const noteChip        = $("note-chip");
   const noteModeToggle  = $("note-mode-toggle");
   const contextSrcChips = $("context-src-chips");
-  const suggestCatBtn   = $("suggest-category-btn");
   const topicModal      = $("topic-modal");
   const historyModal    = $("history-modal");
   const settingsModal   = $("settings-modal");
@@ -1410,21 +1398,10 @@
     const text = msgInput.value.trim();
     if (!text || state.loading) return;
 
-    // If no topic selected, suggest one first
     if (!state.category || !state.topic) {
-      try {
-        toast("Suggesting a topic…");
-        const suggestion = await api("POST", "/suggest-category", { message: text });
-        // Find or use suggested
-        const cat = state.categories.find(c => c.name === suggestion.category)
-          || { id: null, name: suggestion.category, summary: "", updated_at_timestamp: null, topics: [] };
-        const t = cat.topics?.find(t => t.name === suggestion.topic)
-          || { id: null, name: suggestion.topic, summary: "", updated_at_timestamp: null };
-        selectTopic(cat, t);
-      } catch (err) {
-        toast("Couldn't suggest topic — " + err.message, "error");
-        return;
-      }
+      toast("Select a topic first", "error");
+      openTopicModal();
+      return;
     }
 
     const noteMode = noteModeToggle.checked;
@@ -1474,23 +1451,6 @@
       state.loading = false;
     }
   }
-
-  // ── Suggest category ────────────────────────────────────────────────────────
-  suggestCatBtn.addEventListener("click", async () => {
-    const text = msgInput.value.trim();
-    if (!text) { toast("Type a message first, then suggest topic", "error"); return; }
-    try {
-      const s = await api("POST", "/suggest-category", { message: text });
-      const cat = state.categories.find(c => c.name === s.category)
-        || { id: null, name: s.category, summary: "", updated_at_timestamp: null, topics: [] };
-      const t = cat.topics?.find(t => t.name === s.topic)
-        || { id: null, name: s.topic, summary: "", updated_at_timestamp: null };
-      selectTopic(cat, t);
-      toast(`Suggested: ${s.category} / ${s.topic}`, "success");
-    } catch (err) {
-      toast("Couldn't suggest — " + err.message, "error");
-    }
-  });
 
   // ── Note mode toggle ─────────────────────────────────────────────────────
   noteModeToggle.addEventListener("change", () => {
