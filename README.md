@@ -6,8 +6,7 @@ A personal LLM assistant built on Cloudflare Workers with Durable Objects and SQ
 
 - **Conversation Storage**: Stores conversations by category and topic
 - **Context-Aware**: Maintains AI-generated summaries for each topic
-- **Daily Summaries**: Automatically updates topic summaries via cron
-- **Export/Import**: Full data export and import for backup and migration
+- **Daily Summaries**: Automatically updates topic summaries via cron daily
 - **API Key Auth**: Secure access with Bearer token authentication
 - **Web Interface**: Chat UI at the root URL
 
@@ -45,13 +44,17 @@ In your new GitHub repository:
 
 ### 5. Deploy
 
-Push any change to the `main` branch — the GitHub Action will automatically deploy. Your assistant will be live at:
+1. In your GitHub repository click the **Actions** tab
+1. Select the **Deploy** workflow from the left sidebar
+1. Under three dots button on the right choose **Run workflow** option
+
+Once deployed, you will find the link in the action outputs, or you can put it together manually. It looks like this:
 
 ```
 https://personal-assistant.YOUR-ACCOUNT.workers.dev
 ```
 
-Open that URL, enter your `API_KEY` at the top of the page, and start chatting.
+Open that URL, enter your `API_KEY` and start chatting.
 
 ## Getting updates
 
