@@ -48,10 +48,12 @@ In your new GitHub repository:
 1. Select the **Deploy** workflow from the left sidebar
 1. Under three dots button on the right choose **Run workflow** option
 
-Once deployed, you will find the link in the action outputs, or you can put it together manually. It looks like this:
+Once deployed, you will find the link in the action outputs.
+You can put it together manually, like in the example below, based on the email you used to register on Cloudflare.  
 
 ```
-https://personal-assistant.YOUR-ACCOUNT.workers.dev
+replaceme@gmail.com => 
+https://personal-assistant.replaceme.workers.dev
 ```
 
 Open that URL, enter your `API_KEY` and start chatting.
