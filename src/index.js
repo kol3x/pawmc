@@ -25,18 +25,34 @@ import { DurableObject } from "cloudflare:workers";
 export class AssistantDurableObject extends DurableObject {
   #db;
 
-  #runAI(systemPrompt, userContent) {
-    return this.env.AI.run(this.env.AI_MODEL, {
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent }
-      ]
-    }).then(res => {
-      const content = res?.choices?.[0]?.message?.content;
-      if (!content && typeof res === "string") return res;
-      if (!content) throw new Error("AI returned empty response");
-      return content;
+  async #runAI(systemPrompt, userContentOrMessages) {
+    const conversation = Array.isArray(userContentOrMessages)
+      ? userContentOrMessages
+      : [{ role: "user", content: userContentOrMessages }];
+    const messages = [{ role: "system", content: systemPrompt }, ...conversation];
+
+    const provider = this.env.AI_PROVIDER || "workers-ai";
+    const res = provider === "openrouter"
+      ? await this.#callOpenRouter(messages)
+      : await this.env.AI.run(this.env.AI_MODEL_WORKERS_AI, { messages });
+
+    const content = res?.choices?.[0]?.message?.content;
+    if (!content && typeof res === "string") return res;
+    if (!content) throw new Error("AI returned empty response");
+    return content;
+  }
+
+  async #callOpenRouter(messages) {
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages })
     });
+    if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`);
+    return resp.json();
   }
 
   #parseMessages(conversations) {
@@ -197,20 +213,7 @@ export class AssistantDurableObject extends DurableObject {
           ].join("\n");
         })();
 
-      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages
-        ]
-      });
-
-      console.log(`[DEBUG][${stage}] AI response:`, JSON.stringify(aiResponse));
-
-      let assistantMessage = aiResponse?.choices?.[0]?.message?.content;
-      if (!assistantMessage && typeof aiResponse === "string") {
-        assistantMessage = aiResponse;
-      }
-      if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
+      const assistantMessage = await this.#runAI(systemPrompt, messages);
 
       messages.push({ role: "assistant", content: assistantMessage });
 

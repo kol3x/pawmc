@@ -37,5 +37,15 @@ jobs:
           rm /tmp/api-key
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Set OPENROUTER_API_KEY secret (optional)
+        if: ${{ secrets.OPENROUTER_API_KEY != '' }}
+        run: |
+          cat > /tmp/openrouter-key <<'EOF'
+          ${{ secrets.OPENROUTER_API_KEY }}
+          EOF
+          cat /tmp/openrouter-key | npx wrangler secret put OPENROUTER_API_KEY
+          rm /tmp/openrouter-key
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Print URL
         run: echo "✅ Live at https://personal-assistant.$CLOUDFLARE_SUBDOMAIN.workers.dev"

@@ -58,6 +58,17 @@ https://personal-assistant.replaceme.workers.dev
 
 Open that URL, enter your `API_KEY` and start chatting.
 
+## Optional: Use OpenRouter instead of Workers AI
+
+By default, PA uses Cloudflare Workers AI (free, no extra setup). If Workers AI is unavailable or unreliable for your account, you can switch to [OpenRouter](https://openrouter.ai) instead. Note that OpenRouter is pay-per-token — you'll need to add credit to your OpenRouter account.
+
+1. Create an account at [openrouter.ai](https://openrouter.ai) and generate an API key.
+2. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a new secret named `OPENROUTER_API_KEY` with your key.
+3. In `wrangler.jsonc`, set `AI_PROVIDER` to `"openrouter"` and, if you want a different model, update `AI_MODEL_OPENROUTER` to any [OpenRouter model slug](https://openrouter.ai/models).
+4. Commit and push the change (or re-run the **Deploy** action) to redeploy.
+
+To switch back, set `AI_PROVIDER` back to `"workers-ai"`.
+
 ## Getting updates
 
 When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and the action will redeploy automatically.

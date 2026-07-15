@@ -30,6 +30,12 @@ AI-generated summaries are maintained for both topics and categories, updated in
 
 ## Product Decisions
 
+### Optional OpenRouter Support (Implemented — July 2026)
+
+**Considered:** Adding support for an alternative LLM provider since Cloudflare Workers AI can be unreliable, while keeping the project easy to set up for new users (no mandatory extra accounts/keys) and avoiding hidden per-token costs by default.
+
+**Decision:** Workers AI remains the default, zero-config provider (free, no API key, authorized via the existing Cloudflare account). OpenRouter was added as an opt-in alternative, selected via a single `AI_PROVIDER` var (`"workers-ai"` or `"openrouter"`) plus an optional `OPENROUTER_API_KEY` Worker secret set through the same GitHub Actions flow as `API_KEY`. Separate `AI_MODEL_WORKERS_AI` and `AI_MODEL_OPENROUTER` vars (both defaulting to GLM 5.2) let each provider use its own model naming without one interfering with the other. No auto-fallback between providers and no new npm dependency (OpenRouter's OpenAI-compatible REST API is called via plain `fetch`, and its response shape already matches Workers AI's, so response parsing needed no changes) — this keeps the change minimal and the default path completely unaffected for users who never touch it.
+
 ### Summarization Opt-Out (Not Implemented — June 2026)
 
 **Considered:** Adding an explicit flag/mechanism to opt individual messages or whole conversations out of AI summarization.
