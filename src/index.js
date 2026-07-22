@@ -17,47 +17,95 @@ import { DurableObject } from "cloudflare:workers";
  */
 
 /**
+ * @param {unknown} err
+ * @returns {err is Error}
+ */
+function isError(err) {
+  return err instanceof Error;
+}
+
+
+/**
  * @class AssistantDurableObject
- * @augments {DurableObject}
+ * @augments DurableObject
  * @property {DurableObjectState} state
  * @property {WorkerEnvironment} env
  */
 export class AssistantDurableObject extends DurableObject {
-  #db;
+  #db
 
-  #runAI(systemPrompt, userContent) {
-    return this.env.AI.run(this.env.AI_MODEL, {
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent }
-      ]
-    }).then(res => {
-      const content = res?.choices?.[0]?.message?.content;
-      if (!content && typeof res === "string") return res;
-      if (!content) throw new Error("AI returned empty response");
-      return content;
-    });
+  /**
+   * Runs the AI model with the given system prompt and user messages.
+   * @param {string} systemPrompt
+   * @param {Array<{ role: string, content: string }> | string} userContentOrMessages
+   * @returns {Promise<string>}
+   */
+  async #runAI(systemPrompt, userContentOrMessages) {
+    const conversation = Array.isArray(userContentOrMessages)
+      ? userContentOrMessages
+      : [{ role: "user", content: userContentOrMessages }]
+    const messages = [{ role: "system", content: systemPrompt }, ...conversation]
+
+    const provider = this.env.AI_PROVIDER || "workers-ai"
+    const res =
+      provider === "openrouter"
+        ? await this.#callOpenRouter(messages)
+        : await this.env.AI.run(this.env.AI_MODEL_WORKERS_AI, { messages })
+
+    const content = res?.choices?.[0]?.message?.content
+    if (!content && typeof res === "string") return res
+    if (!content) throw new Error("AI returned empty response")
+    return content
   }
 
+  /**
+   * Calls the OpenRouter API with the provided messages.
+   * @param {Array<{ role: string, content: string }>} messages
+   * @returns {Promise<any>}
+   */
+  async #callOpenRouter(messages) {
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages }),
+    })
+    if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
+    return resp.json()
+  }
+
+  /**
+   * Parses the messages from conversations, handling any JSON parsing errors gracefully.
+   * @param {Array<{ id: number, messages: string }>} conversations
+   * @returns {Array<{ role: string, content: string }>}
+   */
   #parseMessages(conversations) {
-    return conversations.flatMap(conv => {
-      try { return JSON.parse(conv.messages); } catch {
-        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`);
-        return [];
+    return conversations.flatMap((conv) => {
+      try {
+        return JSON.parse(conv.messages)
+      } catch {
+        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`)
+        return []
       }
-    });
+    })
   }
-
+  /**
+   *
+   * @param {DurableObjectState} state
+   * @param {Env} env
+   */
   constructor(state, env) {
-    super(state, env);
-    this.state = state;
-    this.env = env;
-    this.#db = state.storage.sql;
-    this.initSchema();
+    super(state, env)
+    this.state = state
+    this.env = env
+    this.#db = state.storage.sql
+    this.initSchema()
   }
 
   async initSchema() {
-    await this.#db.exec(`
+    this.#db.exec(`
       CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
@@ -83,27 +131,29 @@ export class AssistantDurableObject extends DurableObject {
         created_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
         FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
       );
-    `);
+    `)
 
-    const categoryColumns = this.#db.exec(`PRAGMA table_info(categories)`).toArray();
-    const hasUpdatedAtTimestamp = categoryColumns.some(col => col.name === 'updated_at_timestamp');
+    const categoryColumns = this.#db.exec(`PRAGMA table_info(categories)`).toArray()
+    const hasUpdatedAtTimestamp = categoryColumns.some((col) => col.name === "updated_at_timestamp")
     if (!hasUpdatedAtTimestamp) {
-      await this.#db.exec(`ALTER TABLE categories ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
+      this.#db.exec(
+        `ALTER TABLE categories ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`,
+      )
     }
 
-    const topicColumns = this.#db.exec(`PRAGMA table_info(topics)`).toArray();
-    const hasUpdatedAtTimestampTopics = topicColumns.some(col => col.name === 'updated_at_timestamp');
+    const topicColumns = this.#db.exec(`PRAGMA table_info(topics)`).toArray()
+    const hasUpdatedAtTimestampTopics = topicColumns.some((col) => col.name === "updated_at_timestamp")
     if (!hasUpdatedAtTimestampTopics) {
-      await this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`);
+      this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`)
     }
 
-    const convColumns = this.#db.exec(`PRAGMA table_info(conversations)`).toArray();
-    if (!convColumns.some(col => col.name === 'last_message')) {
-      await this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`);
+    const convColumns = this.#db.exec(`PRAGMA table_info(conversations)`).toArray()
+    if (!convColumns.some((col) => col.name === "last_message")) {
+      this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`)
     }
 
-    if (!convColumns.some(col => col.name === 'context_categories')) {
-      await this.#db.exec(`ALTER TABLE conversations ADD COLUMN context_categories TEXT NOT NULL DEFAULT '[]'`);
+    if (!convColumns.some((col) => col.name === "context_categories")) {
+      this.#db.exec(`ALTER TABLE conversations ADD COLUMN context_categories TEXT NOT NULL DEFAULT '[]'`)
     }
   }
 
@@ -114,117 +164,101 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} userMessage
    * @param {boolean} [noteMode] - If true, skips full AI response and just acknowledges
    * @param {Array<{category: string, topic?: string}>} [contextCategories] - Additional categories/topics to pull context from
-   * @returns {Promise<{response: string, conversationId: number}>}
+   * @returns {Promise<{response: string, conversationId: number} | undefined>}
    */
   async chat(category, topic, userMessage, noteMode = false, contextCategories = []) {
-    const stage = "chat";
+    const stage = "chat"
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
-        throw new Error(`[${stage}] Invalid input: category, topic, and userMessage are required`);
+        throw new Error(`[${stage}] Invalid input: category, topic, and userMessage are required`)
 
-      const categoryRow = this.#db.exec(
-        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id, summary`,
-        category.trim()
-      ).one();
-      console.log(`[INFO][${stage}] Category resolved: id=${categoryRow.id}, name=${category}`);
+      const categoryRow = this.#db
+        .exec(
+          `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id, summary`,
+          category.trim(),
+        )
+        .one()
+      console.log(`[INFO][${stage}] Category resolved: id=${categoryRow.id}, name=${category}`)
 
-      const topicRow = this.#db.exec(
-        `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary`,
-        categoryRow.id, topic.trim()
-      ).one();
-      console.log(`[INFO][${stage}] Topic resolved: id=${topicRow.id}, name=${topic}`);
+      const topicRow = this.#db
+        .exec(
+          `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary`,
+          categoryRow.id,
+          topic.trim(),
+        )
+        .one()
+      console.log(`[INFO][${stage}] Topic resolved: id=${topicRow.id}, name=${topic}`)
 
-      const [existingConversation] = this.#db.exec(
-        `SELECT id, messages FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp DESC LIMIT 1`,
-        topicRow.id
-      ).toArray();
+      const [existingConversation] = this.#db
+        .exec(
+          `SELECT id, messages FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp DESC LIMIT 1`,
+          topicRow.id,
+        )
+        .toArray()
 
-      let conversationId;
-      let messages = [];
+      let conversationId
+      let messages = []
 
       if (existingConversation) {
-        conversationId = existingConversation.id;
-        try { messages = JSON.parse(existingConversation.messages); } catch {
-          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conversationId}`);
-          messages = [];
+        conversationId = existingConversation.id
+        try {
+          messages = JSON.parse(String(existingConversation.messages))
+        } catch {
+          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conversationId}`)
+          messages = []
         }
       } else {
-        const newConversation = this.#db.exec(
-          `INSERT INTO conversations (topic_id, messages, context_categories) VALUES (?, '[]', ?) RETURNING id`,
-          topicRow.id, JSON.stringify(contextCategories)
-        ).one();
-        conversationId = newConversation.id;
-        console.log(`[INFO][${stage}] New conversation created: id=${conversationId}`);
+        const newConversation = this.#db
+          .exec(
+            `INSERT INTO conversations (topic_id, messages, context_categories) VALUES (?, '[]', ?) RETURNING id`,
+            topicRow.id,
+            JSON.stringify(contextCategories),
+          )
+          .one()
+        conversationId = newConversation.id
+        console.log(`[INFO][${stage}] New conversation created: id=${conversationId}`)
       }
 
-      messages.push({ role: "user", content: userMessage });
+      messages.push({ role: "user", content: userMessage })
 
       const systemPrompt = noteMode
         ? "The user is saving a context note. Acknowledge with exactly one short word."
         : await (async () => {
-          const contextParts = [];
-          if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`);
-          if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`);
-          if (!contextParts.length) contextParts.push("You have no prior context about this topic. Ask the user about their situation if needed.");
+            const contextParts = []
+            if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`)
+            if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`)
+            if (!contextParts.length)
+              contextParts.push(
+                "You have no prior context about this topic. Ask the user about their situation if needed.",
+              )
 
-          if (contextCategories.length) {
-            for (const ctx of contextCategories) {
-              try {
-                const ctxCatRow = this.#db.exec(`SELECT id, summary FROM categories WHERE name = ?`, ctx.category.trim()).one();
-                if (!ctxCatRow) continue;
-                if (ctx.topic) {
-                  const ctxTopicRow = this.#db.exec(`SELECT summary FROM topics WHERE category_id = ? AND name = ?`, ctxCatRow.id, ctx.topic.trim()).one();
-                  if (ctxTopicRow?.summary) {
-                    contextParts.push(`Additional context from ${ctx.category}/${ctx.topic}: ${ctxTopicRow.summary}`);
-                  } else {
-                    contextParts.push(`Additional context from ${ctx.category}/${ctx.topic}: no prior context available.`);
-                  }
-                } else if (ctxCatRow.summary) {
-                  contextParts.push(`Additional context from ${ctx.category}: ${ctxCatRow.summary}`);
-                } else {
-                  contextParts.push(`Additional context from ${ctx.category}: no prior context available.`);
-                }
-              } catch (err) {
-                console.error(`[ERROR][${stage}] Failed to resolve context category: ${err.message}`);
-              }
-            }
-          }
+            return [
+              this.env.AI_SYSTEM_INSTRUCTION,
+              `You are a personal assistant helping with: ${category} / ${topic}.`,
+              ...contextParts,
+            ].join("\n")
+          })()
 
-          return [
-            this.env.AI_SYSTEM_INSTRUCTION,
-            `You are a personal assistant helping with: ${category} / ${topic}.`,
-            ...contextParts
-          ].join("\n");
-        })();
+      const assistantMessage = await this.#runAI(systemPrompt, messages)
 
-      const aiResponse = await this.env.AI.run(this.env.AI_MODEL, {
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages
-        ]
-      });
+      messages.push({ role: "assistant", content: assistantMessage })
 
-      console.log(`[DEBUG][${stage}] AI response:`, JSON.stringify(aiResponse));
-
-      let assistantMessage = aiResponse?.choices?.[0]?.message?.content;
-      if (!assistantMessage && typeof aiResponse === "string") {
-        assistantMessage = aiResponse;
-      }
-      if (!assistantMessage) throw new Error(`[${stage}] AI returned empty response`);
-
-      messages.push({ role: "assistant", content: assistantMessage });
-
-      const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200);
+      const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200)
       this.#db.exec(
         `UPDATE conversations SET messages = ?, last_message = ?, context_categories = ? WHERE id = ?`,
-        JSON.stringify(messages), lastMsg, JSON.stringify(contextCategories), conversationId
-      );
-      console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`);
+        JSON.stringify(messages),
+        lastMsg,
+        JSON.stringify(contextCategories),
+        conversationId,
+      )
+      console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`)
 
-      return { response: assistantMessage, conversationId };
+      return { response: assistantMessage, conversationId: Number(conversationId) }
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
     }
   }
 
@@ -232,24 +266,31 @@ export class AssistantDurableObject extends DurableObject {
    * Returns all categories and topics. Meant for listing available contexts and their summaries.
    */
   async getCategories() {
-    const stage = "getCategories";
+    const stage = "getCategories"
     try {
-      const categories = [...this.#db.exec(`SELECT id, name, summary, updated_at_timestamp FROM categories ORDER BY name`).toArray()];
-      const result = categories.map(cat => {
-        const topics = [...this.#db.exec(
-          `SELECT id, name, summary, updated_at_timestamp FROM topics WHERE category_id = ? ORDER BY name`,
-          cat.id
-        ).toArray()];
-        return { ...cat, topics };
-      });
-      console.log(`[INFO][${stage}] Fetched ${result.length} categories`);
-      return result;
+      const categories = [
+        ...this.#db.exec(`SELECT id, name, summary, updated_at_timestamp FROM categories ORDER BY name`).toArray(),
+      ]
+      const result = categories.map((cat) => {
+        const topics = [
+          ...this.#db
+            .exec(
+              `SELECT id, name, summary, updated_at_timestamp FROM topics WHERE category_id = ? ORDER BY name`,
+              cat.id,
+            )
+            .toArray(),
+        ]
+        return { ...cat, topics }
+      })
+      console.log(`[INFO][${stage}] Fetched ${result.length} categories`)
+      return result
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
     }
   }
-
 
   /**
    * Incrementally updates a topic's summary by processing only new conversations since the last summary update.
@@ -257,56 +298,70 @@ export class AssistantDurableObject extends DurableObject {
    * @returns {Promise<void>}
    */
   async updateTopicSummaryIncremental(topicId) {
-    const stage = "updateTopicSummaryIncremental";
+    const stage = "updateTopicSummaryIncremental"
     try {
-      const topic = this.#db.exec(
-        `SELECT t.id, t.name, t.summary, t.updated_at_timestamp, c.name as category_name
+      const topic = this.#db
+        .exec(
+          `SELECT t.id, t.name, t.summary, t.updated_at_timestamp, c.name as category_name
          FROM topics t
          JOIN categories c ON c.id = t.category_id
          WHERE t.id = ?`,
-        topicId
-      ).one();
+          topicId,
+        )
+        .one()
 
-      if (!topic) throw new Error(`[${stage}] Topic not found: ${topicId}`);
+      if (!topic) throw new Error(`[${stage}] Topic not found: ${topicId}`)
 
-      const lastSummaryAt = topic.updated_at_timestamp || 0;
-      const conversations = [...this.#db.exec(
-        `SELECT id, messages FROM conversations
+      const lastSummaryAt = topic.updated_at_timestamp || 0
+      const conversations = [
+        ...this.#db
+          .exec(
+            `SELECT id, messages FROM conversations
          WHERE topic_id = ? AND created_at_timestamp >= ?
          ORDER BY created_at_timestamp ASC`,
-        topicId, lastSummaryAt
-      ).toArray()];
+            topicId,
+            lastSummaryAt,
+          )
+          .toArray(),
+      ]
 
       if (!conversations.length) {
-        console.log(`[INFO][${stage}] No new conversations for topic=${topicId}`);
-        return;
+        console.log(`[INFO][${stage}] No new conversations for topic=${topicId}`)
+        return
       }
 
-      const newMessages = this.#parseMessages(conversations);
+      const newMessages = this.#parseMessages(conversations)
 
       if (!newMessages.length) {
-        console.log(`[INFO][${stage}] No new messages for topic=${topicId}`);
-        return;
+        console.log(`[INFO][${stage}] No new messages for topic=${topicId}`)
+        return
       }
 
       const summaryPrompt = [
         this.env.AI_SYSTEM_INSTRUCTION,
         topic.summary ? `Existing summary: ${topic.summary}` : null,
-        `Update the summary by incorporating the following NEW messages. Category: ${topic.category_name}, Topic: ${topic.name}. Messages are labeled with role fields ("user" and "assistant"). Prioritize "user" messages — they represent confirmed information and intent. "assistant" messages are speculative; only include their content if the user explicitly agreed or confirmed it. Be conservative — avoid adding unconfirmed assumptions.`
-      ].filter(Boolean).join("\n");
+        `Update the summary by incorporating the following NEW messages. Category: ${topic.category_name}, Topic: ${topic.name}. Messages are labeled with role fields ("user" and "assistant"). Prioritize "user" messages — they represent confirmed information and intent. "assistant" messages are speculative; only include their content if the user explicitly agreed or confirmed it. Be conservative — avoid adding unconfirmed assumptions.`,
+      ]
+        .filter(Boolean)
+        .join("\n")
 
-      console.log(`[INFO][${stage}] Updating topic summary: id=${topic.id}, name=${topic.name}, newMessages=${newMessages.length}`);
+      console.log(
+        `[INFO][${stage}] Updating topic summary: id=${topic.id}, name=${topic.name}, newMessages=${newMessages.length}`,
+      )
 
-      const newSummary = await this.#runAI(summaryPrompt, JSON.stringify(newMessages));
+      const newSummary = await this.#runAI(summaryPrompt, JSON.stringify(newMessages))
 
       this.#db.exec(
         `UPDATE topics SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
-        newSummary, topic.id
-      );
-      console.log(`[INFO][${stage}] Topic summary updated: topic=${topic.id}, name=${topic.name}`);
+        newSummary,
+        topic.id,
+      )
+      console.log(`[INFO][${stage}] Topic summary updated: topic=${topic.id}, name=${topic.name}`)
     } catch (err) {
-      console.error(`[ERROR][${stage}] Failed to update topic summary: ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] Failed to update topic summary: ${err.message}`)
+      }
+      throw err
     }
   }
 
@@ -316,51 +371,60 @@ export class AssistantDurableObject extends DurableObject {
    * @returns {Promise<void>}
    */
   async updateCategorySummaryIncremental(categoryId) {
-    const stage = "updateCategorySummaryIncremental";
+    const stage = "updateCategorySummaryIncremental"
     try {
-      const category = this.#db.exec(
-        `SELECT id, name, summary, updated_at_timestamp FROM categories WHERE id = ?`,
-        categoryId
-      ).one();
+      const category = this.#db
+        .exec(`SELECT id, name, summary, updated_at_timestamp FROM categories WHERE id = ?`, categoryId)
+        .one()
 
-      if (!category) throw new Error(`[${stage}] Category not found: ${categoryId}`);
+      if (!category) throw new Error(`[${stage}] Category not found: ${categoryId}`)
 
-      const lastCatSummaryAt = category.updated_at_timestamp || 0;
-      const updatedTopics = [...this.#db.exec(
-        `SELECT id, name, summary
+      const lastCatSummaryAt = category.updated_at_timestamp || 0
+      const updatedTopics = [
+        ...this.#db
+          .exec(
+            `SELECT id, name, summary
          FROM topics
          WHERE category_id = ? AND summary != '' AND updated_at_timestamp >= ?`,
-        categoryId, lastCatSummaryAt
-      ).toArray()];
+            categoryId,
+            lastCatSummaryAt,
+          )
+          .toArray(),
+      ]
 
       if (!updatedTopics.length) {
-        console.log(`[INFO][${stage}] No updated topics for category=${categoryId}`);
-        return;
+        console.log(`[INFO][${stage}] No updated topics for category=${categoryId}`)
+        return
       }
 
-      const topicSummariesText = updatedTopics
-        .map(t => `- ${t.name}: ${t.summary}`)
-        .join("\n\n");
+      const topicSummariesText = updatedTopics.map((t) => `- ${t.name}: ${t.summary}`).join("\n\n")
 
       const summaryPrompt = [
         this.env.AI_SYSTEM_INSTRUCTION,
         category.summary ? `Existing category summary: ${category.summary}` : null,
         `Update the category summary by incorporating the following UPDATED topic summaries. The category summary should provide a high-level overview, highlighting common themes and key areas of focus.`,
-        `Updated topic summaries:\n${topicSummariesText}`
-      ].filter(Boolean).join("\n\n");
+        `Updated topic summaries:\n${topicSummariesText}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n")
 
-      console.log(`[INFO][${stage}] Updating category summary: id=${category.id}, name=${category.name}, updatedTopics=${updatedTopics.length}`);
+      console.log(
+        `[INFO][${stage}] Updating category summary: id=${category.id}, name=${category.name}, updatedTopics=${updatedTopics.length}`,
+      )
 
-      const newSummary = await this.#runAI(summaryPrompt, "Generate the updated category summary.");
+      const newSummary = await this.#runAI(summaryPrompt, "Generate the updated category summary.")
 
       this.#db.exec(
         `UPDATE categories SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
-        newSummary, category.id
-      );
-      console.log(`[INFO][${stage}] Category summary updated: category=${category.id}, name=${category.name}`);
+        newSummary,
+        category.id,
+      )
+      console.log(`[INFO][${stage}] Category summary updated: category=${category.id}, name=${category.name}`)
     } catch (err) {
-      console.error(`[ERROR][${stage}] Failed to update category summary: ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] Failed to update category summary: ${err.message}`)
+      }
+      throw err
     }
   }
 
@@ -372,27 +436,25 @@ export class AssistantDurableObject extends DurableObject {
    * @returns {{success: boolean}}
    */
   updateSummary(type, id, summary) {
-    const stage = "updateSummary";
+    const stage = "updateSummary"
     try {
-      if (!["category", "topic"].includes(type))
-        throw new Error(`[${stage}] Invalid type: ${type}`);
-      if (typeof id !== "number" || id <= 0)
-        throw new Error(`[${stage}] Invalid id: ${id}`);
+      if (!["category", "topic"].includes(type)) throw new Error(`[${stage}] Invalid type: ${type}`)
+      if (typeof id !== "number" || id <= 0) throw new Error(`[${stage}] Invalid id: ${id}`)
 
-      const table = type === "category" ? "categories" : "topics";
-      const timestamp = summary === '' ? 0 : Math.floor(Date.now() / 1000);
-      this.#db.exec(
-        `UPDATE ${table} SET summary = ?, updated_at_timestamp = ? WHERE id = ?`,
-        summary, timestamp, id
-      );
-      const updated = this.#db.exec(`SELECT changes() AS count`).one().count;
-      if (!updated) throw new Error(`[${stage}] ${type} not found: ${id}`);
+      const table = type === "category" ? "categories" : "topics"
+      const timestamp = summary === "" ? 0 : Math.floor(Date.now() / 1000)
+      this.#db.exec(`UPDATE ${table} SET summary = ?, updated_at_timestamp = ? WHERE id = ?`, summary, timestamp, id)
+      const updated = this.#db.exec(`SELECT changes() AS count`).one().count
+      if (!updated) throw new Error(`[${stage}] ${type} not found: ${id}`)
 
-      console.log(`[INFO][${stage}] ${type} summary updated: id=${id}`);
-      return { success: true };
+      console.log(`[INFO][${stage}] ${type} summary updated: id=${id}`)
+      return { success: true }
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
+      return { success: false }
     }
   }
 
@@ -402,144 +464,147 @@ export class AssistantDurableObject extends DurableObject {
    * @returns {Promise<void>}
    */
   async updateAllSummaries() {
-    const stage = "updateAllSummaries";
+    const stage = "updateAllSummaries"
     try {
-      const topics = [...this.#db.exec(`SELECT id FROM topics`).toArray()];
+      const topics = [...this.#db.exec(`SELECT id FROM topics`).toArray()]
       for (const topic of topics) {
-        await this.updateTopicSummaryIncremental(topic.id);
+        await this.updateTopicSummaryIncremental(Number(topic.id))
       }
 
-      const categories = [...this.#db.exec(`SELECT id FROM categories`).toArray()];
+      const categories = [...this.#db.exec(`SELECT id FROM categories`).toArray()]
       for (const category of categories) {
-        await this.updateCategorySummaryIncremental(category.id);
+        await this.updateCategorySummaryIncremental(Number(category.id))
       }
 
-      console.log(`[INFO][${stage}] All summaries updated successfully`);
+      console.log(`[INFO][${stage}] All summaries updated successfully`)
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
     }
   }
 
   /**
    * Returns all conversations with category, topic, timestamp, and last message preview, ordered by most recent.
-   * @returns {Promise<Array<{id: number, category: string, topic: string, created_at: number, last_message: string}>>}
+   * @param {string} category - optional category filter
+   * @param {string} topic - optional topic filter
+   * @returns {Promise<Array<{id: number, category: string, topic: string, created_at: number, last_message: string, contextCategories: Array<string>}> | undefined>}
    */
   async listConversations(category, topic) {
-    const stage = "listConversations";
+    const stage = "listConversations"
     try {
       let sql = `
         SELECT c.id, c.created_at_timestamp, c.last_message, c.context_categories, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
-      `;
-      const params = [];
-      const conditions = [];
+      `
+      const params = []
+      const conditions = []
       if (category?.trim()) {
-        conditions.push(`cat.name = ?`);
-        params.push(category.trim());
+        conditions.push(`cat.name = ?`)
+        params.push(category.trim())
       }
       if (topic?.trim()) {
-        conditions.push(`t.name = ?`);
-        params.push(topic.trim());
+        conditions.push(`t.name = ?`)
+        params.push(topic.trim())
       }
-      if (conditions.length) sql += `WHERE ${conditions.join(" AND ")} `;
-      sql += `ORDER BY c.created_at_timestamp DESC LIMIT 50`;
-      const rows = [...this.#db.exec(sql, ...params).toArray()];
-      const result = rows.map(r => {
-        let contextCategories = [];
-        try { contextCategories = JSON.parse(r.context_categories || '[]'); } catch {}
+      if (conditions.length) sql += `WHERE ${conditions.join(" AND ")} `
+      sql += `ORDER BY c.created_at_timestamp DESC LIMIT 50`
+      const rows = [...this.#db.exec(sql, ...params).toArray()]
+      const result = rows.map((r) => {
+        let contextCategories = []
+        if (typeof r.context_categories === "string") {
+          contextCategories = JSON.parse(r.context_categories || "[]")
+        }
         return {
-          id: r.id, category: r.category, topic: r.topic, created_at: r.created_at_timestamp,
-          last_message: (r.last_message || "").slice(0, 80),
-          contextCategories
-        };
-      });
-      console.log(`[INFO][${stage}] Listed ${result.length} conversations`);
-      return result;
+          id: Number(r.id),
+          category: String(r.category),
+          topic: String(r.topic),
+          created_at: Number(r.created_at_timestamp),
+          last_message: (String(r.last_message) || "").slice(0, 80),
+          contextCategories,
+        }
+      })
+      console.log(`[INFO][${stage}] Listed ${result.length} conversations`)
+      return result
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
     }
   }
 
   /**
    * Deletes a conversation by id.
    * @param {number} id
-   * @returns {Promise<{success: boolean}>}
+   * @returns {Promise<{success: boolean} | undefined>}
    */
   async deleteConversation(id) {
-    const stage = "deleteConversation";
+    const stage = "deleteConversation"
     try {
-      this.#db.exec(`DELETE FROM conversations WHERE id = ?`, id);
-      console.log(`[INFO][${stage}] Deleted conversation: id=${id}`);
-      return { success: true };
+      this.#db.exec(`DELETE FROM conversations WHERE id = ?`, id)
+      console.log(`[INFO][${stage}] Deleted conversation: id=${id}`)
+      return { success: true }
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
     }
   }
 
   /**
    * Returns a single conversation with its messages.
    * @param {number} id
-   * @returns {Promise<{id: number, category: string, topic: string, messages: Array<{role: string, content: string}>}>}
+   * @returns {Promise<{id: number, category: string, topic: string, messages: Array<{role: string, content: string}>} | undefined>}
    */
   async getConversation(id) {
-    const stage = "getConversation";
+    const stage = "getConversation"
     try {
-      const row = this.#db.exec(`
+      const row = this.#db
+        .exec(
+          `
         SELECT c.id, c.messages, c.context_categories, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
         WHERE c.id = ?
-      `, id).one();
-      if (!row) throw new Error(`Conversation not found: ${id}`);
-      const messages = JSON.parse(row.messages);
-      let contextCategories = [];
-      try { contextCategories = JSON.parse(row.context_categories || '[]'); } catch {}
-      console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`);
-      return { id: row.id, category: row.category, topic: row.topic, messages, contextCategories };
+      `,
+          id,
+        )
+        .one()
+      if (!row) throw new Error(`Conversation not found: ${id}`)
+      const messages = JSON.parse(row.messages)
+      let contextCategories = []
+      try {
+        contextCategories = JSON.parse(row.context_categories || "[]")
+      } catch {}
+      console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`)
+      return { id: Number(row.id), category: String(row.category), topic: String(row.topic), messages, contextCategories }
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
     }
   }
 
-  /** 
-   * Fetches tasks from KanbanFlow using the SCRAPER service binding.
+  /**
+   * Fetches tasks markdown string from KanbanFlow using the SCRAPER service binding.
    */
-  #scraper() {
-    if (!this.env.SCRAPER) throw new Error("SCRAPER service binding not configured");
-    return this.env.SCRAPER.fetch("http://internal/").then(res => {
-      if (!res.ok) throw new Error(`Scraper error: ${res.status} ${res.statusText}`);
-      return res.json();
-    }).then(data => data.tasks);
-  }
-
-  async #fetchAndFormatKanbanTasks() {
-    const bootstrap = await this.#scraper();
-    const columnMap = {};
-    bootstrap.columns.forEach(c => { columnMap[c.uniqueId] = c.name; });
-
-    const tasksByColumn = {};
-    (bootstrap.taskSections || []).forEach(section => {
-      const colName = columnMap[section.info?.columnId] || "Unknown";
-      if (!tasksByColumn[colName]) tasksByColumn[colName] = [];
-      (section.tasks || []).forEach(task => {
-        const subtasks = task.subTasks?.length
-          ? `\n  Subtasks: ${task.subTasks.map(s => `${s.name}${s.finished ? ' [done]' : ''}`).join(', ')}`
-          : '';
-        const color = task.color ? ` [${task.color}]` : '';
-        tasksByColumn[colName].push(`- ${task.name}${color}${subtasks}`);
-      });
-    });
-
-    return Object.entries(tasksByColumn)
-      .map(([col, tasks]) => `### ${col}\n${tasks.join('\n')}`)
-      .join('\n\n');
+  async #fetchKanbanTasks() {
+    if (!this.env.SCRAPER) throw new Error("SCRAPER service binding not configured")
+    const tasks = this.env.SCRAPER.fetch("http://internal/")
+      .then((res) => {
+        if (!res.ok) throw new Error(`Scraper error: ${res.status} ${res.statusText}`)
+        return res.json()
+      })
+      .then((data) => data.tasks)
+    console.log('***[DEBUG] result:', JSON.stringify(tasks))
+    return tasks
   }
 
   /**
@@ -548,26 +613,28 @@ export class AssistantDurableObject extends DurableObject {
    * @returns {Promise<{response: string}>}
    */
   async generateKanbanRundown() {
-    const stage = "generateKanbanRundown";
+    const stage = "generateKanbanRundown"
     try {
-      const taskReport = await this.#fetchAndFormatKanbanTasks();
+      const taskReport = await this.#fetchKanbanTasks()
+
+      console.log("***[DEBUG]" + taskReport)
 
       if (!taskReport.trim()) {
-        return { response: "No tasks found on your KanbanFlow board." };
+        return { response: "No tasks found on your KanbanFlow board." }
       }
 
-      const prompt = `Here are my current KanbanFlow board tasks:\n\n${taskReport}\n\nPlease provide:\n1. A brief rundown of what I'm working on\n2. Advice on what task I should start working on first and why\nCurrent date: ${new Date().toISOString()}`;
+      const prompt = `Here are my current KanbanFlow board tasks:\n\n${taskReport}\n\nPlease provide:\n1. A brief rundown of what I'm working on\n2. Advice on what task I should start working on first and why\nCurrent date: ${new Date().toISOString()}`
 
-      const response = await this.#runAI(
-        this.env.AI_SYSTEM_INSTRUCTION,
-        prompt
-      );
+      const response = await this.#runAI(this.env.AI_SYSTEM_INSTRUCTION, prompt)
 
-      console.log(`[INFO][${stage}] Rundown generated`);
-      return { response };
+      console.log(`[INFO][${stage}] Rundown generated`)
+      return { response }
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
+      return { response: "" }
     }
   }
 
@@ -577,34 +644,49 @@ export class AssistantDurableObject extends DurableObject {
    * @param {string} category
    * @param {string} topic
    * @param {Array<{role: string, content: string}>} messages
-   * @returns {{conversationId: number}}
+   * @returns {Promise<{conversationId: number} | undefined>}
    */
   async storeConversationMessage(category, topic, messages) {
-    const stage = "storeConversationMessage";
+    const stage = "storeConversationMessage"
     try {
-      const categoryRow = this.#db.exec(
-        `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
-        category.trim()
-      ).one();
+      const categoryRow = this.#db
+        .exec(
+          `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
+          category.trim(),
+        )
+        .one()
 
-      const topicRow = this.#db.exec(
-        `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id`,
-        categoryRow.id, topic.trim()
-      ).one();
+      const topicRow = this.#db
+        .exec(
+          `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id`,
+          categoryRow.id,
+          topic.trim(),
+        )
+        .one()
 
-      const conv = this.#db.exec(
-        `INSERT INTO conversations (topic_id, messages) VALUES (?, ?) RETURNING id`,
-        topicRow.id, JSON.stringify(messages)
-      ).one();
+      const conv = this.#db
+        .exec(
+          `INSERT INTO conversations (topic_id, messages) VALUES (?, ?) RETURNING id`,
+          topicRow.id,
+          JSON.stringify(messages),
+        )
+        .one()
 
-      console.log(`[INFO][${stage}] Stored ${messages.length} messages in ${category}/${topic}, conversation=${conv.id}`);
-      return { conversationId: conv.id };
+      if (!conv) {
+        throw new Error("Failed to store conversation")
+      }
+
+      console.log(
+        `[INFO][${stage}] Stored ${messages.length} messages in ${category}/${topic}, conversation=${conv.id}`,
+      )
+      return { conversationId: Number(conv.id) }
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`)
+        throw err
+      }
     }
   }
-
 }
 
 /**
@@ -612,9 +694,14 @@ export class AssistantDurableObject extends DurableObject {
  * Cloudflare Worker handler for scheduled (cron) events and HTTP requests. 
  * 
  * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations. On HTTP request, routes to the appropriate method of the `AssistantDurableObject` based on the request path and method.
- * 
  */
 export default {
+  /**
+   * Handles scheduled events (cron jobs) to update summaries or generate a Kanban rundown.
+   * @param {ScheduledController} event 
+   * @param {Env} env 
+   * @param {ExecutionContext} ctx 
+   */
   async scheduled(event, env, ctx) {
     const stage = "scheduled";
     try {
@@ -625,10 +712,12 @@ export default {
         if (env.SCRAPER) {
           const result = await stub.generateKanbanRundown();
           const today = new Date().toISOString().split("T")[0];
-          await stub.storeConversationMessage("Kanban", today, [
-            { role: "assistant", content: result.response }
-          ]);
-          console.log(`[INFO][${stage}] Scheduled kanban rundown stored in Kanban/${today}`);
+          if (result.response && result.response.trim()) {
+            await stub.storeConversationMessage("Kanban", today, [
+              { role: "assistant", content: result.response }
+            ]);
+            console.log(`[INFO][${stage}] Scheduled kanban rundown stored in Kanban/${today}`);
+          }
         } else {
           console.log(`[INFO][${stage}] Skipping kanban rundown: SCRAPER service not configured`);
         }
@@ -637,11 +726,19 @@ export default {
         console.log(`[INFO][${stage}] Scheduled summary update complete`);
       }
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
-      throw err;
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`);
+        throw err;
+      }
     }
   },
-
+  /**
+   * 
+   * @param {Request} request 
+   * @param {Env} env 
+   * @param {ExecutionContext} ctx 
+   * @returns 
+   */
   async fetch(request, env, ctx) {
     const stage = "fetch";
     try {
@@ -677,8 +774,8 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/conversations") {
-        const category = url.searchParams.get("category");
-        const topic = url.searchParams.get("topic");
+        const category = url.searchParams.get("category") || "";
+        const topic = url.searchParams.get("topic") || "";
         console.log(`[INFO][${stage}] Listing conversations${category ? ` category=${category}` : ""}${topic ? ` topic=${topic}` : ""}`);
         const result = await stub.listConversations(category, topic);
         return Response.json(result);
@@ -727,7 +824,9 @@ export default {
 
       return Response.json({ error: "Not found" }, { status: 404 });
     } catch (err) {
-      console.error(`[ERROR][${stage}] ${err.message}`);
+      if (isError(err)) {
+        console.error(`[ERROR][${stage}] ${err.message}`);
+      }
       return Response.json({ error: "Internal server error" }, { status: 500 });
     }
   }
