@@ -105,7 +105,7 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   async initSchema() {
-    await this.#db.exec(`
+    this.#db.exec(`
       CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
@@ -136,7 +136,7 @@ export class AssistantDurableObject extends DurableObject {
     const categoryColumns = this.#db.exec(`PRAGMA table_info(categories)`).toArray()
     const hasUpdatedAtTimestamp = categoryColumns.some((col) => col.name === "updated_at_timestamp")
     if (!hasUpdatedAtTimestamp) {
-      await this.#db.exec(
+      this.#db.exec(
         `ALTER TABLE categories ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`,
       )
     }
@@ -144,16 +144,16 @@ export class AssistantDurableObject extends DurableObject {
     const topicColumns = this.#db.exec(`PRAGMA table_info(topics)`).toArray()
     const hasUpdatedAtTimestampTopics = topicColumns.some((col) => col.name === "updated_at_timestamp")
     if (!hasUpdatedAtTimestampTopics) {
-      await this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`)
+      this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`)
     }
 
     const convColumns = this.#db.exec(`PRAGMA table_info(conversations)`).toArray()
     if (!convColumns.some((col) => col.name === "last_message")) {
-      await this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`)
+      this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`)
     }
 
     if (!convColumns.some((col) => col.name === "context_categories")) {
-      await this.#db.exec(`ALTER TABLE conversations ADD COLUMN context_categories TEXT NOT NULL DEFAULT '[]'`)
+      this.#db.exec(`ALTER TABLE conversations ADD COLUMN context_categories TEXT NOT NULL DEFAULT '[]'`)
     }
   }
 
@@ -593,41 +593,18 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
-   * Fetches tasks from KanbanFlow using the SCRAPER service binding.
+   * Fetches tasks markdown string from KanbanFlow using the SCRAPER service binding.
    */
-  #scraper() {
+  async #fetchKanbanTasks() {
     if (!this.env.SCRAPER) throw new Error("SCRAPER service binding not configured")
-    return this.env.SCRAPER.fetch("http://internal/")
+    const tasks = this.env.SCRAPER.fetch("http://internal/")
       .then((res) => {
         if (!res.ok) throw new Error(`Scraper error: ${res.status} ${res.statusText}`)
         return res.json()
       })
       .then((data) => data.tasks)
-  }
-
-  async #fetchAndFormatKanbanTasks() {
-    const bootstrap = await this.#scraper()
-    const columnMap = {}
-    bootstrap.columns.forEach((c) => {
-      columnMap[c.uniqueId] = c.name
-    })
-
-    const tasksByColumn = {}
-    ;(bootstrap.taskSections || []).forEach((section) => {
-      const colName = columnMap[section.info?.columnId] || "Unknown"
-      if (!tasksByColumn[colName]) tasksByColumn[colName] = []
-      ;(section.tasks || []).forEach((task) => {
-        const subtasks = task.subTasks?.length
-          ? `\n  Subtasks: ${task.subTasks.map((s) => `${s.name}${s.finished ? " [done]" : ""}`).join(", ")}`
-          : ""
-        const color = task.color ? ` [${task.color}]` : ""
-        tasksByColumn[colName].push(`- ${task.name}${color}${subtasks}`)
-      })
-    })
-
-    return Object.entries(tasksByColumn)
-      .map(([col, tasks]) => `### ${col}\n${tasks.join("\n")}`)
-      .join("\n\n")
+    console.log('***[DEBUG] result:', JSON.stringify(tasks))
+    return tasks
   }
 
   /**
@@ -638,7 +615,9 @@ export class AssistantDurableObject extends DurableObject {
   async generateKanbanRundown() {
     const stage = "generateKanbanRundown"
     try {
-      const taskReport = await this.#fetchAndFormatKanbanTasks()
+      const taskReport = await this.#fetchKanbanTasks()
+
+      console.log("***[DEBUG]" + taskReport)
 
       if (!taskReport.trim()) {
         return { response: "No tasks found on your KanbanFlow board." }
@@ -796,7 +775,7 @@ export default {
 
       if (request.method === "GET" && url.pathname === "/conversations") {
         const category = url.searchParams.get("category") || "";
-        const topic = url.searchParams.get("topic");
+        const topic = url.searchParams.get("topic") || "";
         console.log(`[INFO][${stage}] Listing conversations${category ? ` category=${category}` : ""}${topic ? ` topic=${topic}` : ""}`);
         const result = await stub.listConversations(category, topic);
         return Response.json(result);
