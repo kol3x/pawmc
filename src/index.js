@@ -593,52 +593,6 @@ export class AssistantDurableObject extends DurableObject {
   }
 
   /**
-   * Fetches tasks markdown string from KanbanFlow using the SCRAPER service binding.
-   */
-  async #fetchKanbanTasks() {
-    if (!this.env.SCRAPER) throw new Error("SCRAPER service binding not configured")
-    const tasks = this.env.SCRAPER.fetch("http://internal/")
-      .then((res) => {
-        if (!res.ok) throw new Error(`Scraper error: ${res.status} ${res.statusText}`)
-        return res.json()
-      })
-      .then((data) => data.tasks)
-    console.log('***[DEBUG] result:', JSON.stringify(tasks))
-    return tasks
-  }
-
-  /**
-   * Fetches all tasks from KanbanFlow, groups by column, and sends to AI
-   * for a brief rundown and advice on what to start working on.
-   * @returns {Promise<{response: string}>}
-   */
-  async generateKanbanRundown() {
-    const stage = "generateKanbanRundown"
-    try {
-      const taskReport = await this.#fetchKanbanTasks()
-
-      console.log("***[DEBUG]" + taskReport)
-
-      if (!taskReport.trim()) {
-        return { response: "No tasks found on your KanbanFlow board." }
-      }
-
-      const prompt = `Here are my current KanbanFlow board tasks:\n\n${taskReport}\n\nPlease provide:\n1. A brief rundown of what I'm working on\n2. Advice on what task I should start working on first and why\nCurrent date: ${new Date().toISOString()}`
-
-      const response = await this.#runAI(this.env.AI_SYSTEM_INSTRUCTION, prompt)
-
-      console.log(`[INFO][${stage}] Rundown generated`)
-      return { response }
-    } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
-      return { response: "" }
-    }
-  }
-
-  /**
    * Stores messages as a new conversation in the given category/topic without calling AI.
    * Creates the category and topic if they don't exist.
    * @param {string} category
@@ -691,13 +645,11 @@ export class AssistantDurableObject extends DurableObject {
 
 /**
  * @exports default
- * Cloudflare Worker handler for scheduled (cron) events and HTTP requests. 
- * 
- * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations. On HTTP request, routes to the appropriate method of the `AssistantDurableObject` based on the request path and method.
+ * Cloudflare Worker handler for scheduled (cron) events and HTTP requests.
  */
 export default {
   /**
-   * Handles scheduled events (cron jobs) to update summaries or generate a Kanban rundown.
+   * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations. On HTTP request, routes to the appropriate method of the `AssistantDurableObject` based on the request path and method.
    * @param {ScheduledController} event 
    * @param {Env} env 
    * @param {ExecutionContext} ctx 
@@ -707,24 +659,8 @@ export default {
     try {
       const id = env.ASSISTANT_DO.idFromName("singleton");
       const stub = env.ASSISTANT_DO.get(id);
-
-      if (event.cron === "0 11 * * *") {
-        if (env.SCRAPER) {
-          const result = await stub.generateKanbanRundown();
-          const today = new Date().toISOString().split("T")[0];
-          if (result.response && result.response.trim()) {
-            await stub.storeConversationMessage("Kanban", today, [
-              { role: "assistant", content: result.response }
-            ]);
-            console.log(`[INFO][${stage}] Scheduled kanban rundown stored in Kanban/${today}`);
-          }
-        } else {
-          console.log(`[INFO][${stage}] Skipping kanban rundown: SCRAPER service not configured`);
-        }
-      } else {
-        await stub.updateAllSummaries();
-        console.log(`[INFO][${stage}] Scheduled summary update complete`);
-      }
+      await stub.updateAllSummaries();
+      console.log(`[INFO][${stage}] Scheduled summary update complete`);
     } catch (err) {
       if (isError(err)) {
         console.error(`[ERROR][${stage}] ${err.message}`);
@@ -733,11 +669,10 @@ export default {
     }
   },
   /**
-   * 
+   * HTTP request handler that routes requests to chat, category, conversation, and summary management endpoints. Validates API key authorization and processes GET, POST, and DELETE methods.
    * @param {Request} request 
    * @param {Env} env 
    * @param {ExecutionContext} ctx 
-   * @returns 
    */
   async fetch(request, env, ctx) {
     const stage = "fetch";
@@ -748,10 +683,19 @@ export default {
 
       const authHeader = request.headers.get("Authorization");
       const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-      if (!apiKey || apiKey !== env.API_KEY) {
+      if (!apiKey || apiKey !== env.API_KEY || !env.API_KEY) {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
 
+      /**
+       * POST /chat - Sends a message to the AI assistant and returns a response with optional context from other topics.
+       * @param {string} category - The category of the topic
+       * @param {string} topic - The topic to chat about
+       * @param {string} message - The message to send to the AI
+       * @param {boolean} [noteMode] - Whether to enable note mode
+       * @param {string[]} [contextCategories] - Optional categories to include for context
+       * @returns {Promise<Object>} Chat response from the AI assistant
+       */
       if (request.method === "POST" && url.pathname === "/chat") {
         let body;
         try { body = await request.json(); } catch {
@@ -767,12 +711,22 @@ export default {
         return Response.json(result);
       }
 
+      /**
+       * GET /categories - Retrieves all available categories.
+       * @returns {Promise<Array>} List of all categories
+       */
       if (request.method === "GET" && url.pathname === "/categories") {
         console.log(`[INFO][${stage}] Fetching categories`);
         const categories = await stub.getCategories();
         return Response.json(categories);
       }
 
+      /**
+       * GET /conversations - Lists conversations, optionally filtered by category and/or topic.
+       * @param {string} [category] - Optional category to filter by
+       * @param {string} [topic] - Optional topic to filter by
+       * @returns {Promise<Array>} List of conversations
+       */
       if (request.method === "GET" && url.pathname === "/conversations") {
         const category = url.searchParams.get("category") || "";
         const topic = url.searchParams.get("topic") || "";
@@ -781,6 +735,11 @@ export default {
         return Response.json(result);
       }
 
+      /**
+       * GET /conversation - Retrieves a single conversation by ID.
+       * @param {number} id - The conversation ID (positive integer, required)
+       * @returns {Promise<Object>} Conversation details
+       */
       if (request.method === "GET" && url.pathname === "/conversation") {
         const id = url.searchParams.get("id");
         if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
@@ -792,6 +751,11 @@ export default {
         return Response.json(result);
       }
 
+      /**
+       * DELETE /conversation - Deletes a conversation by ID.
+       * @param {number} id - The conversation ID (positive integer, required)
+       * @returns {Promise<Object>} Deletion result
+       */
       if (request.method === "DELETE" && url.pathname === "/conversation") {
         const id = url.searchParams.get("id");
         if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 });
@@ -803,6 +767,10 @@ export default {
         return Response.json(result);
       }
 
+      /**
+       * POST /update-summaries - Manually triggers an update of all summaries.
+       * @returns {Promise<Object>} Success status
+       */
       if (request.method === "POST" && url.pathname === "/update-summaries") {
         console.log(`[INFO][${stage}] Manual summary update triggered`);
         await stub.updateAllSummaries();
@@ -810,6 +778,13 @@ export default {
         return Response.json({ success: true });
       }
 
+      /**
+       * POST /update-summary - Updates a specific category or topic summary.
+       * @param {string} type - The type to update: 'category' or 'topic' (required)
+       * @param {number} id - The ID of the category or topic (required)
+       * @param {string} summary - The new summary text (required)
+       * @returns {Promise<Object>} Update result
+       */
       if (request.method === "POST" && url.pathname === "/update-summary") {
         let body;
         try { body = await request.json(); } catch {
