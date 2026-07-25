@@ -19,14 +19,9 @@ AI-generated summaries are maintained for both topics and categories, updated in
 
 ### Existing Features
 1. **Conversation Storage**: By category/topic with auto-creation
-2. **Context-Aware Responses**: Maintains summary context for each topic
-3. **Daily Summaries**: Automatically updated via cron
-4. **KanbanFlow Integration**: Task creation, board views, AI rundowns
-5. **AI Features**: Chat, topic/category querying, contextual responses
-6. **Web UI**: Single HTML file with Chat/Query/Explore/Kanban tabs
-7. **Context Injection System**: Pluggable providers for real-time data (kanban tasks, etc.)
-8. **Context Notes**: Save messages to conversation history without a full AI response ("Save as note" toggle)
-9. **Data Portability**: Full export/import with conflict detection
+1. **Daily Internal Summaries**: Automatically updated via cron
+1. **Web UI**: Single HTML file with ability to select existing, start new chat, overview and redact summaries
+1. **Context Notes**: Save messages to conversation history without a full AI response ("Just note" toggle) to update context
 
 ## Product Decisions
 

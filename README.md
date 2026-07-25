@@ -5,8 +5,8 @@ A personal LLM assistant built on Cloudflare Workers with Durable Objects and SQ
 ## Features
 
 - **Conversation Storage**: Stores conversations by category and topic
-- **Context-Aware**: Maintains AI-generated summaries for each topic
-- **Daily Summaries**: Automatically updates topic summaries via cron daily
+- **Context-Aware**: Maintains AI-generated summaries for each category and topic
+- **Daily Summaries**: Automatically updates summaries via cron daily
 - **API Key Auth**: Secure access with Bearer token authentication
 - **Web Interface**: Chat UI at the root URL
 
