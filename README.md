@@ -60,7 +60,11 @@ Open that URL, enter your `API_KEY` and start chatting.
 
 ## Optional: Use OpenRouter instead of Workers AI
 
-By default, PA uses Cloudflare Workers AI (free, no extra setup). If Workers AI is unavailable or unreliable for your account, you can switch to [OpenRouter](https://openrouter.ai) instead. Note that OpenRouter is pay-per-token — you'll need to add credit to your OpenRouter account.
+By default, PA uses Cloudflare Workers AI (free, no extra setup). However, Workers AI can be unreliable and is only ok for testing out the project. If you are planning to use it extensively, I recommend switching to [OpenRouter](https://openrouter.ai), which is also supported.
+
+Note that OpenRouter is pay-per-token — you'll need to add credit to your OpenRouter account (supports crypto as well). However, it's usually a symbolical spending due to project's simplicity and the budget-friendly model default.
+
+To switch:
 
 1. Create an account at [openrouter.ai](https://openrouter.ai) and generate an API key.
 2. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a new secret named `OPENROUTER_API_KEY` with your key.
