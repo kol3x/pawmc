@@ -31,7 +31,7 @@
 		]
 	},
 	"vars": {
-		"AI_PROVIDER": "openrouter",
+		"AI_PROVIDER": "workers-ai",
 		"AI_MODEL_WORKERS_AI": "@cf/zai-org/glm-5.2",
 		"AI_MODEL_OPENROUTER": "z-ai/glm-5.2",
 		"AI_SYSTEM_INSTRUCTION": "Your client values succinct and direct outputs without extra formatting, warnings, and politeness."
