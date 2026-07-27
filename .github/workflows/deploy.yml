@@ -1,4 +1,4 @@
-name: Deploy Personal Assistant
+name: Deploy Pawmc
 
 on:
   push:
