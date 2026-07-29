@@ -159,6 +159,10 @@ export class AssistantDurableObject extends DurableObject {
 
   /**
    * Processes a user message within a specified category and topic, generates an AI response using the stored conversation history and summary context, and updates the conversation. If the category or topic doesn't exist, it will be created.
+   *
+   * Reuses the topic's latest conversation only if it was created after the topic's last summary
+   * update (i.e. it hasn't been folded into the summary yet). Otherwise, since the existing
+   * conversation is considered already summarized, a new conversation is started.
    * @param {string} category
    * @param {string} topic
    * @param {string} userMessage
@@ -182,7 +186,7 @@ export class AssistantDurableObject extends DurableObject {
 
       const topicRow = this.#db
         .exec(
-          `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary`,
+          `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary, updated_at_timestamp`,
           categoryRow.id,
           topic.trim(),
         )
@@ -191,15 +195,19 @@ export class AssistantDurableObject extends DurableObject {
 
       const [existingConversation] = this.#db
         .exec(
-          `SELECT id, messages FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp DESC LIMIT 1`,
+          `SELECT id, messages, created_at_timestamp FROM conversations WHERE topic_id = ? ORDER BY created_at_timestamp DESC LIMIT 1`,
           topicRow.id,
         )
         .toArray()
 
+      const isConversationFresh =
+        existingConversation &&
+        (!topicRow.updated_at_timestamp || existingConversation.created_at_timestamp > topicRow.updated_at_timestamp)
+
       let conversationId
       let messages = []
 
-      if (existingConversation) {
+      if (isConversationFresh) {
         conversationId = existingConversation.id
         try {
           messages = JSON.parse(String(existingConversation.messages))
