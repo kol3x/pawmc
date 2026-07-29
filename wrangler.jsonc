@@ -11,17 +11,9 @@
 			}
 		]
 	},
-	"migrations": [
-		{
-			"new_sqlite_classes": [
-				"AssistantDurableObject"
-			],
-			"tag": "v1"
-		},
-		{
-			"tag": "v2"
-		}
-	],
+	"exports": {
+		"AssistantDurableObject": { "type": "durable-object", "storage": "sqlite" }
+	},
 	"ai": {
 		"binding": "AI"
 	},
@@ -31,8 +23,8 @@
 		]
 	},
 	"vars": {
-		"AI_PROVIDER": "workers-ai",
-		"AI_MODEL_WORKERS_AI": "@cf/zai-org/glm-5.2",
+		"AI_PROVIDER": "openrouter",
+		"AI_MODEL_WORKERS_AI": "@cf/google/gemma-4-26b-a4b-it",
 		"AI_MODEL_OPENROUTER": "z-ai/glm-5.2",
 		"AI_SYSTEM_INSTRUCTION": "User values succinct and direct outputs without extra formatting, warnings, and politeness."
 	},
