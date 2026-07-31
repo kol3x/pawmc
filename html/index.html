@@ -326,10 +326,24 @@
     .context-text {
       font-size: 13px; color: var(--text-muted); line-height: 1.5;
     }
+    .context-text.glimpse {
+      cursor: pointer;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+    .context-text.glimpse:hover { color: var(--text); }
     .context-empty { font-size: 12px; color: var(--text-dim); font-style: italic; }
     .context-actions {
       display: flex; gap: 8px; margin-top: 8px;
     }
+    .expand-btn {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; padding: 2px; display: flex; align-items: center;
+      transition: color var(--transition);
+    }
+    .expand-btn:hover { color: var(--accent); }
     .ctx-action-btn {
       background: none; border: 1px solid var(--border);
       border-radius: var(--radius-sm);
@@ -529,6 +543,29 @@
     .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
     .modal select option { background: var(--bg); }
     .modal-footer { display: flex; justify-content: flex-end; gap: 8px; }
+    .modal.fullscreen {
+      width: 720px; max-width: 92vw;
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+    .modal.fullscreen .modal-footer { justify-content: space-between; }
+    .modal.fullscreen .modal-footer .footer-left { display: flex; gap: 8px; }
+    .markdown-body { font-size: 14px; line-height: 1.6; color: var(--text); }
+    .markdown-body p { margin-bottom: 8px; }
+    .markdown-body p:last-child { margin-bottom: 0; }
+    .markdown-body pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      overflow-x: auto;
+      font-size: 12px;
+      margin: 6px 0;
+    }
+    .markdown-body code {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 12px;
+    }
 
     /* ── Buttons ── */
     .btn {
@@ -769,6 +806,25 @@
   </div>
 </div>
 
+<!-- Summary Fullscreen Modal -->
+<div class="modal-backdrop hidden" id="summary-modal">
+  <div class="modal fullscreen">
+    <div style="display:flex; align-items:center; gap:8px">
+      <h3 id="summary-modal-title" style="flex:1">Memory</h3>
+      <span class="meta-tag" id="summary-modal-meta"></span>
+    </div>
+    <div class="markdown-body" id="summary-modal-body"></div>
+    <div id="summary-modal-edit"></div>
+    <div class="modal-footer" id="summary-modal-footer">
+      <div class="footer-left">
+        <button class="btn" id="summary-modal-revise">Revise</button>
+        <button class="btn danger" id="summary-modal-forget">Forget</button>
+      </div>
+      <button class="btn primary" id="summary-modal-close">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
@@ -838,6 +894,15 @@
   const topicModal      = $("topic-modal");
   const historyModal    = $("history-modal");
   const settingsModal   = $("settings-modal");
+  const summaryModal    = $("summary-modal");
+  const summaryModalTitle = $("summary-modal-title");
+  const summaryModalMeta  = $("summary-modal-meta");
+  const summaryModalBody  = $("summary-modal-body");
+  const summaryModalEdit  = $("summary-modal-edit");
+  const summaryModalFooter = $("summary-modal-footer");
+  const summaryModalRevise = $("summary-modal-revise");
+  const summaryModalForget = $("summary-modal-forget");
+  const summaryModalClose  = $("summary-modal-close");
   const toastEl         = $("toast");
 
   // ── API ──────────────────────────────────────────────────────────────────
@@ -1209,6 +1274,7 @@
 
     const fClass = freshnessClass(item.updated_at_timestamp);
     const rTime = relativeTime(item.updated_at_timestamp);
+    const hasSummary = !!item.summary;
 
     card.innerHTML = `
       <div class="context-card-header">
@@ -1216,50 +1282,53 @@
         <span class="context-card-title">${escHtml(title)}</span>
         <div class="context-card-meta">
           <span class="meta-tag">${rTime}</span>
+          ${hasSummary ? `<button class="expand-btn" data-action="expand" data-tooltip="View full memory">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+          </button>` : ""}
         </div>
       </div>
-      <div class="context-text" id="ctx-text-${type}-${id}">
-        ${item.summary
+      <div class="context-text ${hasSummary ? "glimpse" : ""}" id="ctx-text-${type}-${id}">
+        ${hasSummary
           ? escHtml(item.summary)
           : `<span class="context-empty">No memory yet — the AI will learn as you chat.</span>`}
       </div>
       <div class="context-actions" id="ctx-actions-${type}-${id}">
-        ${id ? `<button class="ctx-action-btn" data-action="revise" data-type="${type}" data-id="${id}">Revise</button>
-               <button class="ctx-action-btn danger" data-action="forget" data-type="${type}" data-id="${id}">Forget</button>` : ""}
+        ${id && !hasSummary ? `<button class="ctx-action-btn" data-action="revise" data-type="${type}" data-id="${id}">Revise</button>` : ""}
       </div>
       <div id="ctx-edit-${type}-${id}"></div>
     `;
 
-    // Revise / Forget actions
-    card.querySelectorAll("[data-action]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const action = btn.dataset.action;
+    if (hasSummary) {
+      card.querySelector(".context-text").addEventListener("click", () => openSummaryFullscreen(title, item, type, id, card));
+      const expandBtn = card.querySelector('[data-action="expand"]');
+      if (expandBtn) expandBtn.addEventListener("click", () => openSummaryFullscreen(title, item, type, id, card));
+    }
+
+    // Inline revise action (only shown for empty summaries)
+    const reviseBtn = card.querySelector('[data-action="revise"]');
+    if (reviseBtn) {
+      reviseBtn.addEventListener("click", () => {
         const editEl = $(`ctx-edit-${type}-${id}`);
-        if (action === "forget") {
-          if (!confirm("Clear this memory? This can't be undone.")) return;
-          updateSummary(type, id, "", item, card);
-        } else if (action === "revise") {
-          if ($(`ctx-edit-area-${type}-${id}`)) return; // already open
-          const ta = document.createElement("textarea");
-          ta.className = "inline-edit";
-          ta.id = `ctx-edit-area-${type}-${id}`;
-          ta.value = item.summary || "";
-          const actions = document.createElement("div");
-          actions.className = "inline-edit-actions";
-          const saveBtn = document.createElement("button");
-          saveBtn.className = "btn primary"; saveBtn.style.fontSize = "12px"; saveBtn.style.padding = "5px 10px";
-          saveBtn.textContent = "Save";
-          const cancelBtn = document.createElement("button");
-          cancelBtn.className = "btn"; cancelBtn.style.fontSize = "12px"; cancelBtn.style.padding = "5px 10px";
-          cancelBtn.textContent = "Cancel";
-          actions.append(saveBtn, cancelBtn);
-          editEl.append(ta, actions);
-          ta.focus();
-          saveBtn.addEventListener("click", () => updateSummary(type, id, ta.value, item, card));
-          cancelBtn.addEventListener("click", () => editEl.innerHTML = "");
-        }
+        if ($(`ctx-edit-area-${type}-${id}`)) return; // already open
+        const ta = document.createElement("textarea");
+        ta.className = "inline-edit";
+        ta.id = `ctx-edit-area-${type}-${id}`;
+        ta.value = item.summary || "";
+        const actions = document.createElement("div");
+        actions.className = "inline-edit-actions";
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "btn primary"; saveBtn.style.fontSize = "12px"; saveBtn.style.padding = "5px 10px";
+        saveBtn.textContent = "Save";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "btn"; cancelBtn.style.fontSize = "12px"; cancelBtn.style.padding = "5px 10px";
+        cancelBtn.textContent = "Cancel";
+        actions.append(saveBtn, cancelBtn);
+        editEl.append(ta, actions);
+        ta.focus();
+        saveBtn.addEventListener("click", () => updateSummary(type, id, ta.value, item, card));
+        cancelBtn.addEventListener("click", () => editEl.innerHTML = "");
       });
-    });
+    }
 
     return card;
   }
@@ -1279,6 +1348,57 @@
     } catch (err) {
       toast("Couldn't update memory — " + err.message, "error");
     }
+  }
+
+  // ── Summary fullscreen ────────────────────────────────────────────────────
+  function openSummaryFullscreen(title, item, type, id, card) {
+    summaryModalTitle.textContent = title;
+    summaryModalMeta.textContent = relativeTime(item.updated_at_timestamp);
+    summaryModalBody.innerHTML = renderMarkdown(item.summary || "");
+    summaryModalBody.style.display = "block";
+    summaryModalEdit.innerHTML = "";
+    summaryModalFooter.style.display = "flex";
+    summaryModal.classList.remove("hidden");
+
+    summaryModalClose.onclick = () => summaryModal.classList.add("hidden");
+
+    summaryModalForget.onclick = async () => {
+      if (!confirm("Clear this memory? This can't be undone.")) return;
+      await updateSummary(type, id, "", item, card);
+      summaryModal.classList.add("hidden");
+    };
+
+    summaryModalRevise.onclick = () => {
+      summaryModalBody.style.display = "none";
+      summaryModalFooter.style.display = "none";
+      summaryModalEdit.innerHTML = "";
+
+      const ta = document.createElement("textarea");
+      ta.className = "inline-edit";
+      ta.style.minHeight = "200px";
+      ta.value = item.summary || "";
+      const actions = document.createElement("div");
+      actions.className = "inline-edit-actions";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "btn primary";
+      saveBtn.textContent = "Save";
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "btn";
+      cancelBtn.textContent = "Cancel";
+      actions.append(saveBtn, cancelBtn);
+      summaryModalEdit.append(ta, actions);
+      ta.focus();
+
+      saveBtn.addEventListener("click", async () => {
+        await updateSummary(type, id, ta.value, item, card);
+        summaryModal.classList.add("hidden");
+      });
+      cancelBtn.addEventListener("click", () => {
+        summaryModalEdit.innerHTML = "";
+        summaryModalBody.style.display = "block";
+        summaryModalFooter.style.display = "flex";
+      });
+    };
   }
 
   contextToggle.addEventListener("click", () => {
@@ -1577,7 +1697,7 @@
   });
 
   // ── Close modals on backdrop click ──────────────────────────────────────────
-  [topicModal, historyModal, settingsModal].forEach(modal => {
+  [topicModal, historyModal, settingsModal, summaryModal].forEach(modal => {
     modal.addEventListener("click", e => {
       if (e.target === modal) modal.classList.add("hidden");
     });
