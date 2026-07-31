@@ -160,9 +160,9 @@ export class AssistantDurableObject extends DurableObject {
   /**
    * Processes a user message within a specified category and topic, generates an AI response using the stored conversation history and summary context, and updates the conversation. If the category or topic doesn't exist, it will be created.
    *
-   * Reuses the topic's latest conversation only if it was created after the topic's last summary
-   * update (i.e. it hasn't been folded into the summary yet). Otherwise, since the existing
-   * conversation is considered already summarized, a new conversation is started.
+   * Reuses the topic's latest conversation only if it was created at or after the topic's last
+   * summary update (i.e. it hasn't been folded into the summary yet). Otherwise, since the
+   * existing conversation is considered already summarized, a new conversation is started.
    * @param {string} category
    * @param {string} topic
    * @param {string} userMessage
@@ -202,7 +202,7 @@ export class AssistantDurableObject extends DurableObject {
 
       const isConversationFresh =
         existingConversation &&
-        (!topicRow.updated_at_timestamp || existingConversation.created_at_timestamp > topicRow.updated_at_timestamp)
+        (!topicRow.updated_at_timestamp || existingConversation.created_at_timestamp >= topicRow.updated_at_timestamp)
 
       let conversationId
       let messages = []
