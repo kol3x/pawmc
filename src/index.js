@@ -658,11 +658,11 @@ export class AssistantDurableObject extends DurableObject {
 export default {
   /**
    * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations. On HTTP request, routes to the appropriate method of the `AssistantDurableObject` based on the request path and method.
-   * @param {ScheduledController} event 
+   * @param {ScheduledController} _event 
    * @param {Env} env 
-   * @param {ExecutionContext} ctx 
+   * @param {ExecutionContext} _ctx 
    */
-  async scheduled(event, env, ctx) {
+  async scheduled(_event, env, _ctx) {
     const stage = "scheduled";
     try {
       const id = env.ASSISTANT_DO.idFromName("singleton");
@@ -680,9 +680,9 @@ export default {
    * HTTP request handler that routes requests to chat, category, conversation, and summary management endpoints. Validates API key authorization and processes GET, POST, and DELETE methods.
    * @param {Request} request 
    * @param {Env} env 
-   * @param {ExecutionContext} ctx 
+   * @param {ExecutionContext} _ctx 
    */
-  async fetch(request, env, ctx) {
+  async fetch(request, env, _ctx) {
     const stage = "fetch";
     try {
       const url = new URL(request.url);
