@@ -186,6 +186,8 @@ export class AssistantDurableObject extends DurableObject<Env> {
       headers: {
         Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/kol3x/pawmc",
+        "X-Title": "pawmc",
       },
       body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages }),
     })
