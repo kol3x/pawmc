@@ -86,7 +86,7 @@ export interface Env extends Cloudflare.Env {
   OPENROUTER_API_KEY: string
 }
 
-export class AssistantDurableObject extends DurableObject {
+export class AssistantDurableObject extends DurableObject<Env> {
   #db
 
   constructor(state: DurableObjectState, env: Env) {
