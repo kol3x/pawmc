@@ -22,6 +22,13 @@ function isError(err: unknown) {
 }
 
 /**
+ * Formats a thrown value for logging: the message for Error instances, the stringified value otherwise.
+ */
+function errorMessage(err: unknown) {
+  return isError(err) ? err.message : String(err)
+}
+
+/**
  * Parses the `id` query parameter of a conversation route, returning the positive integer id, or null when missing or invalid.
  */
 function parseConversationId(url: URL): number | null {
@@ -87,10 +94,6 @@ export class AssistantDurableObject extends DurableObject {
     this.#db = state.storage.sql
     this.initSchema()
   }
-
-  // Effective TypeScript — Item 3: Understand That Code Generation Is Independent of Types
-  // The DDL strings and PRAGMA migrations are pure runtime behavior — invisible to the type checker, so keep them covered by tests (Item 77: type checking and unit testing are complementary).
-  // Item 74: Know How to Reconstruct Types at Runtime — PRAGMA table_info rows come back untyped; `col.name` only works after runtime narrowing/casting.
 
   /**
    * Creates the SQLite schema and backfills columns missing from older databases.
@@ -204,10 +207,6 @@ export class AssistantDurableObject extends DurableObject {
     })
   }
 
-  // Effective TypeScript — Item 25: Understand Evolving Types
-  // `messages = []`, `contextParts = []`, and `let conversationId` all start implicit and evolve; the book: recognize evolving types, but prefer explicit annotations (Message[] / string[] / number) for better checking.
-  // Item 32: Avoid Including null or undefined in Type Aliases — the non-Error swallow path makes this `Promise<{response, conversationId} | undefined>`; Item 33: push that undefined to the perimeter (rethrow always, like the other catch blocks).
-
   /**
    * Processes a user message within a specified category and topic, generates an AI response using the stored conversation history and summary context, and updates the conversation. If the category or topic doesn't exist, it will be created.
    *
@@ -305,10 +304,8 @@ export class AssistantDurableObject extends DurableObject {
 
       return { response: assistantMessage, conversationId: Number(conversationId) }
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
     }
   }
 
@@ -335,16 +332,10 @@ export class AssistantDurableObject extends DurableObject {
       console.log(`[INFO][${stage}] Fetched ${result.length} categories`)
       return result
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
     }
   }
-
-  // Effective TypeScript — Item 36: Use a Distinct Type for Special Values
-  // `topic.updated_at_timestamp || 0` uses 0 as the "never summarized" sentinel — the book prefers null/undefined as the special value over 0, -1, or "".
-  // Item 40: Prefer Imprecise Types to Inaccurate Types — SQLite rows are loosely typed by necessity; a simple row interface beats a clever-but-wrong model.
 
   /**
    * Incrementally updates a topic's summary by processing only new conversations since the last summary update.
@@ -410,16 +401,10 @@ export class AssistantDurableObject extends DurableObject {
       )
       console.log(`[INFO][${stage}] Topic summary updated: topic=${topic.id}, name=${topic.name}`)
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] Failed to update topic summary: ${err.message}`)
-      }
+      console.error(`[ERROR][${stage}] Failed to update topic summary: ${errorMessage(err)}`)
       throw err
     }
   }
-
-  // Effective TypeScript — Item 26: Use Functional Constructs and Libraries to Help Types Flow
-  // `[a, b ?? null, c].filter(Boolean)` does NOT remove null from the element type in TS — use flatMap or an is-string type predicate to keep types flowing.
-  // Item 15: Use Type Operations and Generic Types to Avoid Repeating Yourself — prompt assembly mirrors updateTopicSummaryIncremental; a shared buildSummaryPrompt helper (typed over "topic" | "category") covers both.
 
   /**
    * Incrementally updates a category's summary by processing only topics that have been updated since the last category summary update.
@@ -477,9 +462,7 @@ export class AssistantDurableObject extends DurableObject {
       )
       console.log(`[INFO][${stage}] Category summary updated: category=${category.id}, name=${category.name}`)
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] Failed to update category summary: ${err.message}`)
-      }
+      console.error(`[ERROR][${stage}] Failed to update category summary: ${errorMessage(err)}`)
       throw err
     }
   }
@@ -487,7 +470,7 @@ export class AssistantDurableObject extends DurableObject {
   /**
    * Updates or clears a summary for a category or topic. Empty summary = forget.
    */
-  updateSummary(type: "category" | "topic", id: number, summary: string): { success: boolean } {
+  updateSummary(type: "category" | "topic", id: number, summary: string): { success: true } {
     const stage = "updateSummary"
     try {
       if (!["category", "topic"].includes(type)) throw new Error(`[${stage}] Invalid type: ${type}`)
@@ -502,11 +485,8 @@ export class AssistantDurableObject extends DurableObject {
       console.log(`[INFO][${stage}] ${type} summary updated: id=${id}`)
       return { success: true }
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
-      return { success: false }
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
     }
   }
 
@@ -530,16 +510,10 @@ export class AssistantDurableObject extends DurableObject {
 
       console.log(`[INFO][${stage}] All summaries updated successfully`)
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
     }
   }
-
-  // Effective TypeScript — Item 25: Understand Evolving Types
-  // `const params = []` / `const conditions = []` evolve via .push() — declare string[] / string[] up front when converting.
-  // Item 35: Prefer More Precise Alternatives to String Types — category/topic filters are free-form strings; prefer unions or keyof where the domain is narrower.
 
   /**
    * Returns all conversations with category, topic, timestamp, and last message preview, ordered by most recent.
@@ -555,8 +529,8 @@ export class AssistantDurableObject extends DurableObject {
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
       `
-    const params = []
-    const conditions = []
+    const params: string[] = []
+    const conditions: string[] = []
     if (category?.trim()) {
       conditions.push(`cat.name = ?`)
       params.push(category.trim())
@@ -581,29 +555,20 @@ export class AssistantDurableObject extends DurableObject {
     return result
   }
 
-  // Effective TypeScript — Item 32: Avoid Including null or undefined in Type Aliases
-  // The non-Error swallow path makes this `Promise<{success: boolean} | undefined>` — an implicit union; either always return a result or always throw (Item 33: push nulls to the perimeter).
-
   /**
    * Deletes a conversation by id.
    */
-  async deleteConversation(id: number): Promise<{success: true} | undefined> {
+  async deleteConversation(id: number): Promise<{ success: true }> {
     const stage = "deleteConversation"
     try {
       this.#db.exec(`DELETE FROM conversations WHERE id = ?`, id)
       console.log(`[INFO][${stage}] Deleted conversation: id=${id}`)
       return { success: true }
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
     }
   }
-
-  // Effective TypeScript — Item 29: Prefer Types That Always Represent Valid States
-  // The empty `catch {}` quietly maps "corrupt context_categories" to "no context" — decide if that's a valid state (model it, e.g. `contextCategories?: string[]`) or an error to propagate.
-  // Item 74: Know How to Reconstruct Types at Runtime — JSON.parse of row.messages/context_categories needs runtime validation, not trust.
 
   /**
    * Returns a single conversation with its messages.
@@ -631,9 +596,6 @@ export class AssistantDurableObject extends DurableObject {
 
 }
 
-// Effective TypeScript — Item 24: Understand How Context Is Used in Type Inference
-// Annotating this object as  gives scheduled/fetch contextual parameter types — context flows in, so the @param lines below become redundant (Item 31).
-
 /**
  * Cloudflare Worker handler for scheduled (cron) events and HTTP requests.
  * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations.
@@ -647,16 +609,10 @@ export default {
       await stub.updateAllSummaries()
       console.log(`[INFO][${stage}] Scheduled summary update complete`)
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
     }
   },
-  // Effective TypeScript — Item 30: Be Liberal in What You Accept and Strict in What You Produce
-  // Inputs arrive raw (JSON bodies, query params — broad); every route returns exactly Response.json with a fixed shape (narrow).
-  // Item 22: Understand Type Narrowing — each method+pathname if-check narrows the request before dispatch.
-
   /**
    * HTTP request handler that routes requests to chat, category, conversation, and summary management endpoints. Validates API key authorization and processes GET, POST, and DELETE methods.
    */
@@ -671,9 +627,6 @@ export default {
       if (!apiKey || apiKey !== env.API_KEY || !env.API_KEY) {
         return Response.json({ error: "Unauthorized" }, { status: 401 })
       }
-
-      // Effective TypeScript — Item 5: Limit Use of the any Type
-      // `await request.json()` is any — parse, destructure, and guard right here keeps any at the narrowest scope (Item 43) and never lets it escape into stub.chat's parameters.
 
       /**
        * POST /chat - Sends a message to the AI assistant and returns a response with optional context from other topics.
@@ -690,21 +643,14 @@ export default {
         return Response.json(result)
       }
 
-      // Effective TypeScript — Item 33: Push Null Values to the Perimeter of Your Types
-      // `url.searchParams.get()` yields string | null — normalize once at the edge (`|| ""` → trimmed string[]) so the stub sees only strings.
-      // Item 67: Export All Types That Appear in Public APIs — the response shape is dumpCategories' exported type.
-
       /**
-       * GET /dump - Full-fidelity JSON dump of categories, topics, and conversations for one-shot migration export.
+       * GET /categories - Lists all categories with their nested topics and summaries.
        */
       if (request.method === "GET" && url.pathname === "/categories") {
         console.log(`[INFO][${stage}] Fetching categories`)
         const categories = await stub.getCategories()
         return Response.json(categories)
       }
-
-      // Effective TypeScript — Item 37: Limit the Use of Optional Properties
-      // Optional filters modeled as `string | undefined` params (not an options object with optional keys); normalize null query params at the edge (Item 33).
 
       /**
        * GET /conversations - Lists conversations, optionally filtered by category and/or topic.
@@ -715,21 +661,9 @@ export default {
         console.log(
           `[INFO][${stage}] Listing conversations${category ? ` category=${category}` : ""}${topic ? ` topic=${topic}` : ""}`,
         )
-        let result
-        try {
-          result = await stub.listConversations(category, topic)
-        } catch (err) {
-          if (isError(err)) {
-            console.error(`[ERROR][${stage}] ${err.message}`)
-            throw err
-          }
-        }
+        const result = await stub.listConversations(category, topic)
         return Response.json(result)
       }
-
-      // Effective TypeScript — Item 64: Consider Brands for Nominal Typing
-      // After the isInteger check, `convId` is more than a number — a branded ConversationId type would make stub.getConversation(convId) unforgeable.
-      // Item 10: Avoid Object Wrapper Types — Number() here is a runtime conversion, not the String/Number annotation trap; still, the validation deserves a typed helper.
 
       /**
        * GET /conversation - Retrieves a single conversation by ID.
@@ -738,15 +672,8 @@ export default {
         const convId = parseConversationId(url)
         if (!convId) return Response.json({ error: "id query parameter must be a positive integer" }, { status: 400 })
         console.log(`[INFO][${stage}] Fetching conversation: id=${convId}`)
-        try {
-          const result = await stub.getConversation(convId)
-          return Response.json(result)
-        } catch (err) {
-          if (isError(err)) {
-            console.error(`[ERROR][${stage}] ${err.message}`)
-            throw err
-          }
-        }
+        const result = await stub.getConversation(convId)
+        return Response.json(result)
       }
 
       /**
@@ -770,10 +697,6 @@ export default {
         return Response.json({ success: true })
       }
 
-      // Effective TypeScript — Item 22: Understand Type Narrowing
-      // The four-way guard narrows the parsed-any body before stub.updateSummary — in TS a discriminated request union (UpdateSummaryRequest) would replace it.
-      // Item 29: Prefer Types That Always Represent Valid States — parse+validate once into a valid-state type instead of re-checking fields at each use.
-
       /**
        * POST /update-summary - Updates a specific category or topic summary.
        * @returns {Promise<Object>} Update result
@@ -790,9 +713,7 @@ export default {
 
       return Response.json({ error: "Not found" }, { status: 404 })
     } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-      }
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
       return Response.json({ error: "Internal server error" }, { status: 500 })
     }
   },
