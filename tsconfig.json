@@ -11,5 +11,7 @@
     "noUnusedParameters": true,
     "noImplicitAny": true,
     "useUnknownInCatchVariables": true,
+    "lib": ["ES2022"],
+    "types": []
   }
 }

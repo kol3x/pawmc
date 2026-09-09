@@ -21,6 +21,26 @@ function isError(err: unknown) {
   return err instanceof Error
 }
 
+/**
+ * Parses the `id` query parameter of a conversation route, returning the positive integer id, or null when missing or invalid.
+ */
+function parseConversationId(url: URL): number | null {
+  const id = Number(url.searchParams.get("id"))
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+/**
+ * Parses a JSON request body into an unvalidated object. Returns null when the body is not valid JSON or not a JSON object; callers apply their own field checks.
+ */
+async function parseJsonBody(request: Request): Promise<Record<string, any> | null> {
+  try {
+    const body: unknown = await request.json()
+    return typeof body === "object" && body !== null ? (body as Record<string, any>) : null
+  } catch {
+    return null
+  }
+}
+
 const AiConversationEntry = z.object({
   role: z.string(),
   content: z.string(),
@@ -40,39 +60,23 @@ const AiResponse = z.object({
 
 type AiResponse = z.infer<typeof AiResponse>
 
-const Category = z.object({
-  id: z.number(),
-  name: z.string(),
-  summary: z.string().default(""),
-  updated_at_timestamp: z.number().nullable(),
+const ChatRequest = z.object({
+  category: z.string().trim().min(1),
+  topic: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+  noteMode: z.boolean().optional(),
 })
 
-type Category = z.infer<typeof Category>
-
-const Topic = z.object({
-  id: z.number(),
-  category_id: z.number(),
-  name: z.string(),
-  summary: z.string().default(""),
-  updated_at_timestamp: z.number().nullable(),
+const UpdateSummaryRequest = z.object({
+  type: z.enum(["category", "topic"]),
+  id: z.number().int().positive(),
+  summary: z.string(),
 })
 
-type Topic = z.infer<typeof Topic>
-
-const Conversation = z.object({
-  id: z.number(),
-  topic_id: z.number(),
-  messages: z.string().default("[]"),
-  last_message: z.string().default(""),
-  created_at_timestamp: z.number().nullable(),
-})
-
-type Conversation = z.infer<typeof Conversation>
-
-export interface Env {
+export interface Env extends Cloudflare.Env {
   ASSISTANT_DO: DurableObjectNamespace<AssistantDurableObject>
   API_KEY: string
-  OPENROUTER_API_KEY?: string
+  OPENROUTER_API_KEY: string
 }
 
 export class AssistantDurableObject extends DurableObject {
@@ -148,7 +152,8 @@ export class AssistantDurableObject extends DurableObject {
   async #runAI(systemPrompt: string, conversation: AiConversationEntry[]): Promise<string> {
     const messages = [{ role: "system", content: systemPrompt }, ...conversation]
 
-    const provider = this.env.AI_PROVIDER || "workers-ai"
+    const providerSetting: string = this.env.AI_PROVIDER || "workers-ai"
+    const provider = providerSetting === "openrouter" ? "openrouter" : "workers-ai"
     const res =
       provider === "openrouter"
         ? await this.#callOpenRouter(messages)
@@ -188,10 +193,10 @@ export class AssistantDurableObject extends DurableObject {
   /**
    * Parses the messages from conversations, handling any JSON parsing errors gracefully.
    */
-  #parseMessages(conversations: Conversation[]): AiConversationEntry[] {
+  #parseMessages(conversations: Array<Record<string, SqlStorageValue>>): AiConversationEntry[] {
     return conversations.flatMap((conv) => {
       try {
-        return AiConversationEntry.parse(conv.messages)
+        return AiConversationEntry.parse(JSON.parse(String(conv.messages)))
       } catch {
         console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`)
         return []
@@ -242,7 +247,9 @@ export class AssistantDurableObject extends DurableObject {
 
       const isConversationFresh =
         existingConversation &&
-        (!topicRow.updated_at_timestamp || existingConversation.created_at_timestamp >= topicRow.updated_at_timestamp)
+        existingConversation.created_at_timestamp &&
+        (!topicRow.updated_at_timestamp ||
+          Number(existingConversation.created_at_timestamp || 0) >= Number(topicRow.updated_at_timestamp || 0))
 
       let conversationId
       let messages: AiConversationEntry[] = []
@@ -513,20 +520,12 @@ export class AssistantDurableObject extends DurableObject {
     try {
       const topics = [...this.#db.exec(`SELECT id FROM topics`).toArray()]
       for (const topic of topics) {
-        const parsedTopic = Topic.pick({ id: true }).safeParse(topic)
-        if (!parsedTopic.success) {
-          throw new Error("Failed to parse topic for summarization")
-        }
-        await this.updateTopicSummaryIncremental(parsedTopic.data.id)
+        await this.updateTopicSummaryIncremental(Number(topic.id))
       }
 
       const categories = [...this.#db.exec(`SELECT id FROM categories`).toArray()]
       for (const category of categories) {
-        const parsedCategory = Category.pick({ id: true }).safeParse(category)
-        if (!parsedCategory.success) {
-          throw new Error("Failed to parse category for summarization")
-        }
-        await this.updateCategorySummaryIncremental(parsedCategory.data.id)
+        await this.updateCategorySummaryIncremental(Number(category.id))
       }
 
       console.log(`[INFO][${stage}] All summaries updated successfully`)
@@ -545,7 +544,10 @@ export class AssistantDurableObject extends DurableObject {
   /**
    * Returns all conversations with category, topic, timestamp, and last message preview, ordered by most recent.
    */
-  async listConversations(category: string, topic: string): Promise<Conversation[]> {
+  async listConversations(
+    category: string,
+    topic: string,
+  ): Promise<Array<{ id: number; category: string; topic: string; created_at: number; last_message: string }>> {
     const stage = "listConversations"
     let sql = `
         SELECT c.id, c.created_at_timestamp, c.last_message, cat.name as category, t.name as topic
@@ -584,10 +586,8 @@ export class AssistantDurableObject extends DurableObject {
 
   /**
    * Deletes a conversation by id.
-   * @param {number} id
-   * @returns {Promise<{success: boolean} | undefined>}
    */
-  async deleteConversation(id) {
+  async deleteConversation(id: number): Promise<{success: true} | undefined> {
     const stage = "deleteConversation"
     try {
       this.#db.exec(`DELETE FROM conversations WHERE id = ?`, id)
@@ -607,10 +607,8 @@ export class AssistantDurableObject extends DurableObject {
 
   /**
    * Returns a single conversation with its messages.
-   * @param {number} id
-   * @returns {Promise< | undefined>}
    */
-  async getConversation(id: number): Promise<Conversation> {
+  async getConversation(id: number): Promise<{ id: number; category: string; topic: string; messages: unknown }> {
     const stage = "getConversation"
     const row = this.#db
       .exec(
@@ -625,81 +623,22 @@ export class AssistantDurableObject extends DurableObject {
       )
       .one()
     if (!row) throw new Error(`Conversation not found: ${id}`)
-    const messages = JSON.parse(row.messages)
+    const messages = JSON.parse(String(row.messages || "[]"))
 
     console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`)
     return { id: Number(row.id), category: String(row.category), topic: String(row.topic), messages }
   }
 
-  // Effective TypeScript — Item 38: Avoid Repeated Parameters of the Same Type
-  // (category, topic, messages) — three loose consecutive params; the book prefers fewer params with distinct types, or a single object parameter.
-  // Item 30: Be Liberal in What You Accept and Strict in What You Produce — liberal message input, strict {conversationId: number} output.
-
-  /**
-   * Stores messages as a new conversation in the given category/topic without calling AI.
-   * Creates the category and topic if they don't exist.
-   */
-  async storeConversationMessage(
-    category: string,
-    topic: string,
-    messages: AiConversationEntry[],
-  ): Promise<{ conversationId: number }> {
-    const stage = "storeConversationMessage"
-    try {
-      const categoryRow = this.#db
-        .exec(
-          `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
-          category.trim(),
-        )
-        .one()
-
-      const topicRow = this.#db
-        .exec(
-          `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id`,
-          categoryRow.id,
-          topic.trim(),
-        )
-        .one()
-
-      const conv = this.#db
-        .exec(
-          `INSERT INTO conversations (topic_id, messages) VALUES (?, ?) RETURNING id`,
-          topicRow.id,
-          JSON.stringify(messages),
-        )
-        .one()
-
-      if (!conv) {
-        throw new Error("Failed to store conversation")
-      }
-
-      console.log(
-        `[INFO][${stage}] Stored ${messages.length} messages in ${category}/${topic}, conversation=${conv.id}`,
-      )
-      return { conversationId: Number(conv.id) }
-    } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
-    }
-  }
 }
 
 // Effective TypeScript — Item 24: Understand How Context Is Used in Type Inference
-// Annotating this object as ExportedHandler<Env> gives scheduled/fetch contextual parameter types — context flows in, so the @param lines below become redundant (Item 31).
+// Annotating this object as  gives scheduled/fetch contextual parameter types — context flows in, so the @param lines below become redundant (Item 31).
 
 /**
- * @exports default
  * Cloudflare Worker handler for scheduled (cron) events and HTTP requests.
+ * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations.
  */
 export default {
-  // Effective TypeScript — Item 31: Don't Repeat Type Information in Documentation
-  // With ExportedHandler<Env> context, the @param lines here restate inferable types — keep the behavior docs, drop the type restatements (Item 18: avoid cluttering code with inferable types).
-
-  /**
-   * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations.
-   */
   async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext) {
     const stage = "scheduled"
     try {
@@ -738,22 +677,13 @@ export default {
 
       /**
        * POST /chat - Sends a message to the AI assistant and returns a response with optional context from other topics.
-       * @param {string} category - The category of the topic
-       * @param {string} topic - The topic to chat about
-       * @param {string} message - The message to send to the AI
-       * @param {boolean} [noteMode] - Whether to enable note mode
-       * @returns {Promise<Object>} Chat response from the AI assistant
        */
       if (request.method === "POST" && url.pathname === "/chat") {
-        let body
-        try {
-          body = await request.json()
-        } catch {
-          return Response.json({ error: "Invalid JSON body" }, { status: 400 })
-        }
-        const { category, topic, message, noteMode } = body ?? {}
-        if (!category?.trim() || !topic?.trim() || !message?.trim())
-          return Response.json({ error: "category, topic, and message are required" }, { status: 400 })
+        const body = await parseJsonBody(request)
+        if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+        const parsed = ChatRequest.safeParse(body)
+        if (!parsed.success) return Response.json({ error: "category, topic, and message are required" }, { status: 400 })
+        const { category, topic, message, noteMode } = parsed.data
 
         console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, noteMode=${!!noteMode}`)
         const result = await stub.chat(category, topic, message, !!noteMode)
@@ -766,8 +696,6 @@ export default {
 
       /**
        * GET /dump - Full-fidelity JSON dump of categories, topics, and conversations for one-shot migration export.
-       * @param {string} [categories] - comma-separated category names to include; empty = all
-       * @returns {Promise<Object>} Complete dump payload
        */
       if (request.method === "GET" && url.pathname === "/categories") {
         console.log(`[INFO][${stage}] Fetching categories`)
@@ -780,9 +708,6 @@ export default {
 
       /**
        * GET /conversations - Lists conversations, optionally filtered by category and/or topic.
-       * @param {string} [category] - Optional category to filter by
-       * @param {string} [topic] - Optional topic to filter by
-       * @returns {Promise<Array>} List of conversations
        */
       if (request.method === "GET" && url.pathname === "/conversations") {
         const category = url.searchParams.get("category") || ""
@@ -808,15 +733,10 @@ export default {
 
       /**
        * GET /conversation - Retrieves a single conversation by ID.
-       * @param {number} id - The conversation ID (positive integer, required)
-       * @returns {Promise<Object>} Conversation details
        */
       if (request.method === "GET" && url.pathname === "/conversation") {
-        const id = url.searchParams.get("id")
-        if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 })
-        const convId = Number(id)
-        if (!Number.isInteger(convId) || convId <= 0)
-          return Response.json({ error: "id must be a positive integer" }, { status: 400 })
+        const convId = parseConversationId(url)
+        if (!convId) return Response.json({ error: "id query parameter must be a positive integer" }, { status: 400 })
         console.log(`[INFO][${stage}] Fetching conversation: id=${convId}`)
         try {
           const result = await stub.getConversation(convId)
@@ -829,31 +749,19 @@ export default {
         }
       }
 
-      // Effective TypeScript — Item 45: Hide Unsafe Type Assertions in Well-Typed Functions
-      // This id validation duplicates GET /conversation — extract parseConversationId(params): number | null and hide the Number() cast inside it (Item 15: DRY).
-
       /**
        * DELETE /conversation - Deletes a conversation by ID.
-       * @param {number} id - The conversation ID (positive integer, required)
-       * @returns {Promise<Object>} Deletion result
        */
       if (request.method === "DELETE" && url.pathname === "/conversation") {
-        const id = url.searchParams.get("id")
-        if (!id) return Response.json({ error: "id query parameter is required" }, { status: 400 })
-        const convId = Number(id)
-        if (!Number.isInteger(convId) || convId <= 0)
-          return Response.json({ error: "id must be a positive integer" }, { status: 400 })
+        const convId = parseConversationId(url)
+        if (!convId) return Response.json({ error: "id query parameter must be a positive integer" }, { status: 400 })
         console.log(`[INFO][${stage}] Deleting conversation: id=${convId}`)
         const result = await stub.deleteConversation(convId)
         return Response.json(result)
       }
 
-      // Effective TypeScript — Item 68: Use TSDoc for API Comments
-      // These in-body route docs are the API reference — in .ts they become TSDoc on typed handlers, and "@returns {Promise<Object>}" fuzz becomes real types (Item 31: no type info in docs).
-
       /**
        * POST /update-summaries - Manually triggers an update of all summaries.
-       * @returns {Promise<Object>} Success status
        */
       if (request.method === "POST" && url.pathname === "/update-summaries") {
         console.log(`[INFO][${stage}] Manual summary update triggered`)
@@ -871,23 +779,12 @@ export default {
        * @returns {Promise<Object>} Update result
        */
       if (request.method === "POST" && url.pathname === "/update-summary") {
-        let body: { type: string; id: number; summary: string } | unknown
-        try {
-          body = await request.json()
-        } catch {
-          return Response.json({ error: "Invalid JSON body" }, { status: 400 })
-        }
-        if (!("id" in body || "summary" in body || typeof body.id !== "number" || typeof body.summary !== "string")) {
-          return Response.json({ error: "type, id, and summary are required" }, { status: 400 })
-        }
-        if (
-          !["category", "topic"].includes(body?.type) ||
-          typeof body?.id !== "number" ||
-          typeof body?.summary !== "string"
-        )
-          return Response.json({ error: "type, id, and summary are required" }, { status: 400 })
+        const body = await parseJsonBody(request)
+        if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+        const parsed = UpdateSummaryRequest.safeParse(body)
+        if (!parsed.success) return Response.json({ error: "type, id, and summary are required" }, { status: 400 })
 
-        const result = await stub.updateSummary(body.type, body.id, body.summary)
+        const result = await stub.updateSummary(parsed.data.type, parsed.data.id, parsed.data.summary)
         return Response.json(result)
       }
 
