@@ -14,25 +14,14 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npx wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - name: Set API_KEY secret
+      - name: Deploy
         run: |
-          cat > /tmp/api-key <<'EOF'
-          ${{ secrets.API_KEY }}
-          EOF
-          cat /tmp/api-key | npx wrangler secret put API_KEY
-          rm /tmp/api-key
+          printf 'API_KEY=%s\n' "$PAWMC_API_KEY" > "$RUNNER_TEMP/pawmc-secrets"
+          if [ -n "$PAWMC_OPENROUTER_API_KEY" ]; then
+            printf 'OPENROUTER_API_KEY=%s\n' "$PAWMC_OPENROUTER_API_KEY" >> "$RUNNER_TEMP/pawmc-secrets"
+          fi
+          npx wrangler deploy --secrets-file "$RUNNER_TEMP/pawmc-secrets"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - name: Set OPENROUTER_API_KEY secret
-        continue-on-error: true
-        run: |
-          cat > /tmp/openrouter-key <<'EOF'
-          ${{ secrets.OPENROUTER_API_KEY }}
-          EOF
-          cat /tmp/openrouter-key | npx wrangler secret put OPENROUTER_API_KEY
-          rm /tmp/openrouter-key
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PAWMC_API_KEY: ${{ secrets.API_KEY }}
+          PAWMC_OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

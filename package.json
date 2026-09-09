@@ -9,6 +9,10 @@
 		"start": "wrangler dev"
 	},
 	"devDependencies": {
-		"wrangler": "^4.76.0"
+		"typescript": "7.0.2",
+		"wrangler": "4.127.0"
+	},
+	"dependencies": {
+		"zod": "^4.5.4"
 	}
 }
