@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
+import * as z from "zod"
 
 /**
  * Cloudflare Worker that uses SQLite-backed Durable Object. Works as a personal LLM assistant. It stores conversations and uses summed up context when generating responses.
@@ -20,106 +21,65 @@ function isError(err: unknown) {
   return err instanceof Error
 }
 
-interface AiConversationEntry {
-  role: string
-  content: string
+const AiConversationEntry = z.object({
+  role: z.string(),
+  content: z.string(),
+})
+
+type AiConversationEntry = z.infer<typeof AiConversationEntry>
+
+const AiResponse = z.object({
+  choices: z.array(
+    z.object({
+      message: z.object({
+        content: z.string(),
+      }),
+    }),
+  ),
+})
+
+type AiResponse = z.infer<typeof AiResponse>
+
+const Category = z.object({
+  id: z.number(),
+  name: z.string(),
+  summary: z.string().default(""),
+  updated_at_timestamp: z.number().nullable(),
+})
+
+type Category = z.infer<typeof Category>
+
+const Topic = z.object({
+  id: z.number(),
+  category_id: z.number(),
+  name: z.string(),
+  summary: z.string().default(""),
+  updated_at_timestamp: z.number().nullable(),
+})
+
+type Topic = z.infer<typeof Topic>
+
+const Conversation = z.object({
+  id: z.number(),
+  topic_id: z.number(),
+  messages: z.string().default("[]"),
+  last_message: z.string().default(""),
+  created_at_timestamp: z.number().nullable(),
+})
+
+type Conversation = z.infer<typeof Conversation>
+
+export interface Env {
+  ASSISTANT_DO: DurableObjectNamespace<AssistantDurableObject>
+  API_KEY: string
+  OPENROUTER_API_KEY?: string
 }
 
-// Effective TypeScript — Item 67: Export All Types That Appear in Public APIs
-// The { role, content } shape recurs ~8 times in this file — extract an exported `Message` interface when converting (Item 15: DRY applies to types, too).
-// Item 13: Know the Differences Between type and interface — prefer interface for object shapes like Message/Category/Topic.
-
-/**
- * @class AssistantDurableObject
- * @augments DurableObject
- * @property {DurableObjectState} state
- * @property {WorkerEnvironment} env
- */
 export class AssistantDurableObject extends DurableObject {
   #db
 
-  /**
-   * Runs the AI model with the given system prompt and user messages.
-   */
-  async #runAI(systemPrompt: string, conversation: AiConversationEntry[]): Promise<string> {
-    const messages = [{ role: "system", content: systemPrompt }, ...conversation]
-
-    const provider = this.env.AI_PROVIDER || "workers-ai"
-    const res =
-      provider === "openrouter"
-        ? await this.#callOpenRouter(messages)
-        : await this.env.AI.run(this.env.AI_MODEL_WORKERS_AI, {
-            messages: messages as unknown as ChatCompletionMessageParam[],
-          })
-
-    if (
-      !(
-        typeof res === "object" &&
-        res !== null &&
-        "choices" in res &&
-        Array.isArray(res.choices) &&
-        res.choices.length &&
-        "message" in res.choices[0] &&
-        "content" in res.choices[0].message &&
-        res.choices[0].message.content
-      )
-    ) {
-      throw new Error("AI returned empty response")
-    }
-    return res.choices[0].message.content
-  }
-
-  // Effective TypeScript — Item 46: Use unknown Instead of any
-  // `resp.json()` is Promise<any> — type it unknown and validate/narrow before reading choices.
-  // Item 70: Mirror Types to Sever Dependencies — restate just the OpenRouter response fields you use, locally.
-  // Item 42: Avoid Types Based on Anecdotal Data — source the shape from OpenRouter's docs/schema, not from responses you've happened to see.
-
-  /**
-   * Calls the OpenRouter API with the provided messages.
-   */
-  async #callOpenRouter(messages: AiConversationEntry[]): Promise<unknown> {
-    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages }),
-    })
-    if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
-    return resp.json()
-  }
-
-  // Effective TypeScript — Item 74: Know How to Reconstruct Types at Runtime
-  // JSON.parse returns any; validate role/content (Zod or a guard) rather than trusting stored transcripts.
-  // Item 45: Hide Unsafe Type Assertions in Well-Typed Functions — this is exactly the right wrapper: unsafe parse inside, clean Array<Message> out.
-
-  /**
-   * Parses the messages from conversations, handling any JSON parsing errors gracefully.
-   * @param {Array<{ id: number, messages: string }>} conversations
-   */
-  #parseMessages(conversations): AiConversationEntry[] {
-    return conversations.flatMap((conv) => {
-      try {
-        return JSON.parse(conv.messages)
-      } catch {
-        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`)
-        return []
-      }
-    })
-  }
-  // Effective TypeScript — Item 76: Create an Accurate Model of Your Environment
-  // `Env` comes from the wrangler-generated worker-configuration.d.ts — in TS, contextual typing types state/env here and the @property lines above disappear.
-
-  /**
-   *
-   * @param {DurableObjectState} state
-   * @param {Env} env
-   */
-  constructor(state, env) {
+  constructor(state: DurableObjectState, env: Env) {
     super(state, env)
-    this.state = state
-    this.env = env
     this.#db = state.storage.sql
     this.initSchema()
   }
@@ -182,6 +142,63 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
+  /**
+   * Runs the AI model with the given system prompt and user messages.
+   */
+  async #runAI(systemPrompt: string, conversation: AiConversationEntry[]): Promise<string> {
+    const messages = [{ role: "system", content: systemPrompt }, ...conversation]
+
+    const provider = this.env.AI_PROVIDER || "workers-ai"
+    const res =
+      provider === "openrouter"
+        ? await this.#callOpenRouter(messages)
+        : await this.env.AI.run(this.env.AI_MODEL_WORKERS_AI, {
+            messages: messages as unknown as ChatCompletionMessageParam[],
+          })
+
+    const aiResponse = AiResponse.safeParse(res)
+
+    if (!aiResponse.success || !aiResponse.data.choices[0]) {
+      throw new Error("AI returned unexpected object structure.")
+    }
+
+    const content = aiResponse.data.choices[0].message.content
+    if (!content) {
+      throw new Error("AI returned empty response or unexpected object structure.")
+    }
+    return content
+  }
+
+  /**
+   * Calls the OpenRouter API with the provided messages.
+   */
+  async #callOpenRouter(messages: AiConversationEntry[]): Promise<unknown> {
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages }),
+    })
+    if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
+    return resp.json()
+  }
+
+  /**
+   * Parses the messages from conversations, handling any JSON parsing errors gracefully.
+   */
+  #parseMessages(conversations: Conversation[]): AiConversationEntry[] {
+    return conversations.flatMap((conv) => {
+      try {
+        return AiConversationEntry.parse(conv.messages)
+      } catch {
+        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`)
+        return []
+      }
+    })
+  }
+
   // Effective TypeScript — Item 25: Understand Evolving Types
   // `messages = []`, `contextParts = []`, and `let conversationId` all start implicit and evolve; the book: recognize evolving types, but prefer explicit annotations (Message[] / string[] / number) for better checking.
   // Item 32: Avoid Including null or undefined in Type Aliases — the non-Error swallow path makes this `Promise<{response, conversationId} | undefined>`; Item 33: push that undefined to the perimeter (rethrow always, like the other catch blocks).
@@ -192,14 +209,8 @@ export class AssistantDurableObject extends DurableObject {
    * Reuses the topic's latest conversation only if it was created at or after the topic's last
    * summary update (i.e. it hasn't been folded into the summary yet). Otherwise, since the
    * existing conversation is considered already summarized, a new conversation is started.
-   * @param {string} category
-   * @param {string} topic
-   * @param {string} userMessage
-   * @param {boolean} [noteMode] - If true, skips full AI response and just acknowledges
-   * @param {Array<{category: string, topic?: string}>} [contextCategories] - Additional categories/topics to pull context from
-   * @returns {Promise<{response: string, conversationId: number} | undefined>}
    */
-  async chat(category, topic, userMessage, noteMode = false, contextCategories = []) {
+  async chat(category: string, topic: string, userMessage: string, noteMode: boolean = false) {
     const stage = "chat"
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
@@ -246,11 +257,7 @@ export class AssistantDurableObject extends DurableObject {
         }
       } else {
         const newConversation = this.#db
-          .exec(
-            `INSERT INTO conversations (topic_id, messages, context_categories) VALUES (?, '[]', ?) RETURNING id`,
-            topicRow.id,
-            JSON.stringify(contextCategories),
-          )
+          .exec(`INSERT INTO conversations (topic_id, messages) VALUES (?, '[]') RETURNING id`, topicRow.id)
           .one()
         conversationId = newConversation.id
         console.log(`[INFO][${stage}] New conversation created: id=${conversationId}`)
@@ -282,10 +289,9 @@ export class AssistantDurableObject extends DurableObject {
 
       const lastMsg = (messages[messages.length - 1]?.content || "").slice(0, 200)
       this.#db.exec(
-        `UPDATE conversations SET messages = ?, last_message = ?, context_categories = ? WHERE id = ?`,
+        `UPDATE conversations SET messages = ?, last_message = ? WHERE id = ?`,
         JSON.stringify(messages),
         lastMsg,
-        JSON.stringify(contextCategories),
         conversationId,
       )
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`)
@@ -335,10 +341,8 @@ export class AssistantDurableObject extends DurableObject {
 
   /**
    * Incrementally updates a topic's summary by processing only new conversations since the last summary update.
-   * @param {number} topicId
-   * @returns {Promise<void>}
    */
-  async updateTopicSummaryIncremental(topicId) {
+  async updateTopicSummaryIncremental(topicId: number): Promise<void> {
     const stage = "updateTopicSummaryIncremental"
     try {
       const topic = this.#db
@@ -412,10 +416,8 @@ export class AssistantDurableObject extends DurableObject {
 
   /**
    * Incrementally updates a category's summary by processing only topics that have been updated since the last category summary update.
-   * @param {number} categoryId
-   * @returns {Promise<void>}
    */
-  async updateCategorySummaryIncremental(categoryId) {
+  async updateCategorySummaryIncremental(categoryId: number): Promise<void> {
     const stage = "updateCategorySummaryIncremental"
     try {
       const category = this.#db
@@ -475,18 +477,10 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
-  // Effective TypeScript — Item 7: Think of Types as Sets of Values
-  // The `"category" | "topic"` signature is a two-element set; the runtime includes() guard is that same set checked at the value level — in TS it becomes the narrowing proof.
-  // Item 35: Prefer More Precise Alternatives to String Types — keep the literal union, don't loosen to string.
-
   /**
    * Updates or clears a summary for a category or topic. Empty summary = forget.
-   * @param {"category"|"topic"} type
-   * @param {number} id
-   * @param {string} summary - new summary text, or empty string to clear
-   * @returns {{success: boolean}}
    */
-  updateSummary(type, id, summary) {
+  updateSummary(type: "category" | "topic", id: number, summary: string): { success: boolean } {
     const stage = "updateSummary"
     try {
       if (!["category", "topic"].includes(type)) throw new Error(`[${stage}] Invalid type: ${type}`)
@@ -509,10 +503,6 @@ export class AssistantDurableObject extends DurableObject {
     }
   }
 
-  // Effective TypeScript — Item 27: Use async Functions Instead of Callbacks to Improve Type Flow
-  // The for..of + await loops (not .forEach(async ...)) keep type flow and sequencing intact — preserve this shape when converting.
-  // Item 74: Know How to Reconstruct Types at Runtime — Number(topic.id) coerces loosely-typed SQLite row values; typing the rows removes the coercion.
-
   /**
    * Updates all summaries incrementally. Iterates through all topics and categories,
    * processing only new conversations since last summary update.
@@ -523,12 +513,20 @@ export class AssistantDurableObject extends DurableObject {
     try {
       const topics = [...this.#db.exec(`SELECT id FROM topics`).toArray()]
       for (const topic of topics) {
-        await this.updateTopicSummaryIncremental(Number(topic.id))
+        const parsedTopic = Topic.pick({ id: true }).safeParse(topic)
+        if (!parsedTopic.success) {
+          throw new Error("Failed to parse topic for summarization")
+        }
+        await this.updateTopicSummaryIncremental(parsedTopic.data.id)
       }
 
       const categories = [...this.#db.exec(`SELECT id FROM categories`).toArray()]
       for (const category of categories) {
-        await this.updateCategorySummaryIncremental(Number(category.id))
+        const parsedCategory = Category.pick({ id: true }).safeParse(category)
+        if (!parsedCategory.success) {
+          throw new Error("Failed to parse category for summarization")
+        }
+        await this.updateCategorySummaryIncremental(parsedCategory.data.id)
       }
 
       console.log(`[INFO][${stage}] All summaries updated successfully`)
@@ -546,54 +544,39 @@ export class AssistantDurableObject extends DurableObject {
 
   /**
    * Returns all conversations with category, topic, timestamp, and last message preview, ordered by most recent.
-   * @param {string} category - optional category filter
-   * @param {string} topic - optional topic filter
-   * @returns {Promise<Array<{id: number, category: string, topic: string, created_at: number, last_message: string, contextCategories: Array<string>}> | undefined>}
    */
-  async listConversations(category, topic) {
+  async listConversations(category: string, topic: string): Promise<Conversation[]> {
     const stage = "listConversations"
-    try {
-      let sql = `
-        SELECT c.id, c.created_at_timestamp, c.last_message, c.context_categories, cat.name as category, t.name as topic
+    let sql = `
+        SELECT c.id, c.created_at_timestamp, c.last_message, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
       `
-      const params = []
-      const conditions = []
-      if (category?.trim()) {
-        conditions.push(`cat.name = ?`)
-        params.push(category.trim())
-      }
-      if (topic?.trim()) {
-        conditions.push(`t.name = ?`)
-        params.push(topic.trim())
-      }
-      if (conditions.length) sql += `WHERE ${conditions.join(" AND ")} `
-      sql += `ORDER BY c.created_at_timestamp DESC LIMIT 50`
-      const rows = [...this.#db.exec(sql, ...params).toArray()]
-      const result = rows.map((r) => {
-        let contextCategories = []
-        if (typeof r.context_categories === "string") {
-          contextCategories = JSON.parse(r.context_categories || "[]")
-        }
-        return {
-          id: Number(r.id),
-          category: String(r.category),
-          topic: String(r.topic),
-          created_at: Number(r.created_at_timestamp),
-          last_message: (String(r.last_message) || "").slice(0, 80),
-          contextCategories,
-        }
-      })
-      console.log(`[INFO][${stage}] Listed ${result.length} conversations`)
-      return result
-    } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
+    const params = []
+    const conditions = []
+    if (category?.trim()) {
+      conditions.push(`cat.name = ?`)
+      params.push(category.trim())
     }
+    if (topic?.trim()) {
+      conditions.push(`t.name = ?`)
+      params.push(topic.trim())
+    }
+    if (conditions.length) sql += `WHERE ${conditions.join(" AND ")} `
+    sql += `ORDER BY c.created_at_timestamp DESC LIMIT 50`
+    const rows = [...this.#db.exec(sql, ...params).toArray()]
+    const result = rows.map((r) => {
+      return {
+        id: Number(r.id),
+        category: String(r.category),
+        topic: String(r.topic),
+        created_at: Number(r.created_at_timestamp),
+        last_message: (String(r.last_message) || "").slice(0, 80),
+      }
+    })
+    console.log(`[INFO][${stage}] Listed ${result.length} conversations`)
+    return result
   }
 
   // Effective TypeScript — Item 32: Avoid Including null or undefined in Type Aliases
@@ -627,34 +610,25 @@ export class AssistantDurableObject extends DurableObject {
    * @param {number} id
    * @returns {Promise< | undefined>}
    */
-  async getConversation(
-    id: number,
-  ): Promise<{ id: number; category: string; topic: string; messages: AiConversationEntry[] }> {
+  async getConversation(id: number): Promise<Conversation> {
     const stage = "getConversation"
-    try {
-      const row = this.#db
-        .exec(
-          `
+    const row = this.#db
+      .exec(
+        `
         SELECT c.id, c.messages, cat.name as category, t.name as topic
         FROM conversations c
         JOIN topics t ON t.id = c.topic_id
         JOIN categories cat ON cat.id = t.category_id
         WHERE c.id = ?
       `,
-          id,
-        )
-        .one()
-      if (!row) throw new Error(`Conversation not found: ${id}`)
-      const messages = JSON.parse(row.messages)
+        id,
+      )
+      .one()
+    if (!row) throw new Error(`Conversation not found: ${id}`)
+    const messages = JSON.parse(row.messages)
 
-      console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`)
-      return { id: Number(row.id), category: String(row.category), topic: String(row.topic), messages }
-    } catch (err) {
-      if (isError(err)) {
-        console.error(`[ERROR][${stage}] ${err.message}`)
-        throw err
-      }
-    }
+    console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`)
+    return { id: Number(row.id), category: String(row.category), topic: String(row.topic), messages }
   }
 
   // Effective TypeScript — Item 38: Avoid Repeated Parameters of the Same Type
@@ -724,12 +698,9 @@ export default {
   // With ExportedHandler<Env> context, the @param lines here restate inferable types — keep the behavior docs, drop the type restatements (Item 18: avoid cluttering code with inferable types).
 
   /**
-   * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations. On HTTP request, routes to the appropriate method of the `AssistantDurableObject` based on the request path and method.
-   * @param {ScheduledController} _event
-   * @param {Env} env
-   * @param {ExecutionContext} _ctx
+   * On each scheduled run, gets a singleton instance of the `ASSISTANT_DO` and updates summaries by processing unsummarized conversations.
    */
-  async scheduled(_event, env, _ctx) {
+  async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext) {
     const stage = "scheduled"
     try {
       const id = env.ASSISTANT_DO.idFromName("singleton")
@@ -754,8 +725,7 @@ export default {
     const stage = "fetch"
     try {
       const url = new URL(request.url)
-      const id = env.ASSISTANT_DO.idFromName("singleton")
-      const stub = env.ASSISTANT_DO.get(id)
+      const stub = env.ASSISTANT_DO.getByName("singleton")
 
       const authHeader = request.headers.get("Authorization")
       const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null
@@ -772,7 +742,6 @@ export default {
        * @param {string} topic - The topic to chat about
        * @param {string} message - The message to send to the AI
        * @param {boolean} [noteMode] - Whether to enable note mode
-       * @param {string[]} [contextCategories] - Optional categories to include for context
        * @returns {Promise<Object>} Chat response from the AI assistant
        */
       if (request.method === "POST" && url.pathname === "/chat") {
@@ -782,15 +751,12 @@ export default {
         } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 })
         }
-        const { category, topic, message, noteMode, contextCategories: rawContextCategories } = body ?? {}
-        const contextCategories = Array.isArray(rawContextCategories) ? rawContextCategories : []
+        const { category, topic, message, noteMode } = body ?? {}
         if (!category?.trim() || !topic?.trim() || !message?.trim())
           return Response.json({ error: "category, topic, and message are required" }, { status: 400 })
 
-        console.log(
-          `[INFO][${stage}] Chat request: category=${category}, topic=${topic}, contextCategories=${JSON.stringify(contextCategories)}, noteMode=${!!noteMode}`,
-        )
-        const result = await stub.chat(category, topic, message, !!noteMode, contextCategories)
+        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, noteMode=${!!noteMode}`)
+        const result = await stub.chat(category, topic, message, !!noteMode)
         return Response.json(result)
       }
 
@@ -824,7 +790,15 @@ export default {
         console.log(
           `[INFO][${stage}] Listing conversations${category ? ` category=${category}` : ""}${topic ? ` topic=${topic}` : ""}`,
         )
-        const result = await stub.listConversations(category, topic)
+        let result
+        try {
+          result = await stub.listConversations(category, topic)
+        } catch (err) {
+          if (isError(err)) {
+            console.error(`[ERROR][${stage}] ${err.message}`)
+            throw err
+          }
+        }
         return Response.json(result)
       }
 
@@ -844,8 +818,15 @@ export default {
         if (!Number.isInteger(convId) || convId <= 0)
           return Response.json({ error: "id must be a positive integer" }, { status: 400 })
         console.log(`[INFO][${stage}] Fetching conversation: id=${convId}`)
-        const result = await stub.getConversation(convId)
-        return Response.json(result)
+        try {
+          const result = await stub.getConversation(convId)
+          return Response.json(result)
+        } catch (err) {
+          if (isError(err)) {
+            console.error(`[ERROR][${stage}] ${err.message}`)
+            throw err
+          }
+        }
       }
 
       // Effective TypeScript — Item 45: Hide Unsafe Type Assertions in Well-Typed Functions
