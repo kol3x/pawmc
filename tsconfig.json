@@ -8,6 +8,8 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "noImplicitAny": true,
+    "useUnknownInCatchVariables": true,
   }
 }
