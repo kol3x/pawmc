@@ -186,8 +186,16 @@ export class AssistantDurableObject extends DurableObject<Env> {
       headers: {
         Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/kol3x/pawmc",
+        "X-Title": "pawmc",
       },
-      body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages }),
+      body: JSON.stringify({
+        model: this.env.AI_MODEL_OPENROUTER,
+        messages,
+        // Prefer the fastest provider serving this model to minimize end-to-end latency.
+        provider: { sort: "latency" },
+      }),
+      signal: AbortSignal.timeout(120_000),
     })
     if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
     return resp.json()
