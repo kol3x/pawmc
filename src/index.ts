@@ -178,7 +178,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
-   * Calls the OpenRouter API with the provided messages.
+   * Calls the OpenRouter API with the provided messages. Prefer the fastest provider.
    */
   async #callOpenRouter(messages: AiConversationEntry[]): Promise<unknown> {
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -186,8 +186,15 @@ export class AssistantDurableObject extends DurableObject<Env> {
       headers: {
         Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/kol3x/pawmc",
+        "X-Title": "pawmc",
       },
-      body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages }),
+      body: JSON.stringify({
+        model: this.env.AI_MODEL_OPENROUTER,
+        messages,
+        provider: { sort: "latency" },
+      }),
+      signal: AbortSignal.timeout(120_000),
     })
     if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
     return resp.json()
@@ -199,9 +206,9 @@ export class AssistantDurableObject extends DurableObject<Env> {
   #parseMessages(conversations: Array<Record<string, SqlStorageValue>>): AiConversationEntry[] {
     return conversations.flatMap((conv) => {
       try {
-        return AiConversationEntry.parse(JSON.parse(String(conv.messages)))
-      } catch {
-        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`)
+        return AiConversationEntry.array().parse(JSON.parse(String(conv.messages)))
+      } catch (err) {
+        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}: ${errorMessage(err)}`)
         return []
       }
     })
@@ -257,8 +264,8 @@ export class AssistantDurableObject extends DurableObject<Env> {
         conversationId = existingConversation.id
         try {
           messages = JSON.parse(String(existingConversation.messages))
-        } catch {
-          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conversationId}`)
+        } catch (err) {
+          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conversationId}: ${errorMessage(err)}`)
           messages = []
         }
       } else {
@@ -493,9 +500,8 @@ export class AssistantDurableObject extends DurableObject<Env> {
   /**
    * Updates all summaries incrementally. Iterates through all topics and categories,
    * processing only new conversations since last summary update.
-   * @returns {Promise<void>}
    */
-  async updateAllSummaries() {
+  async updateAllSummaries(): Promise<void> {
     const stage = "updateAllSummaries"
     try {
       const topics = [...this.#db.exec(`SELECT id FROM topics`).toArray()]
@@ -699,7 +705,6 @@ export default {
 
       /**
        * POST /update-summary - Updates a specific category or topic summary.
-       * @returns {Promise<Object>} Update result
        */
       if (request.method === "POST" && url.pathname === "/update-summary") {
         const body = await parseJsonBody(request)
