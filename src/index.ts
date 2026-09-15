@@ -199,9 +199,9 @@ export class AssistantDurableObject extends DurableObject<Env> {
   #parseMessages(conversations: Array<Record<string, SqlStorageValue>>): AiConversationEntry[] {
     return conversations.flatMap((conv) => {
       try {
-        return AiConversationEntry.parse(JSON.parse(String(conv.messages)))
-      } catch {
-        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}`)
+        return AiConversationEntry.array().parse(JSON.parse(String(conv.messages)))
+      } catch (err) {
+        console.error(`[ERROR] Failed to parse messages for conversation=${conv.id}: ${errorMessage(err)}`)
         return []
       }
     })
@@ -257,8 +257,8 @@ export class AssistantDurableObject extends DurableObject<Env> {
         conversationId = existingConversation.id
         try {
           messages = JSON.parse(String(existingConversation.messages))
-        } catch {
-          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conversationId}`)
+        } catch (err) {
+          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${conversationId}: ${errorMessage(err)}`)
           messages = []
         }
       } else {
