@@ -186,6 +186,8 @@ export class AssistantDurableObject extends DurableObject<Env> {
       headers: {
         Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/kol3x/pawmc",
+        "X-Title": "pawmc",
       },
       body: JSON.stringify({ model: this.env.AI_MODEL_OPENROUTER, messages }),
     })
@@ -493,9 +495,8 @@ export class AssistantDurableObject extends DurableObject<Env> {
   /**
    * Updates all summaries incrementally. Iterates through all topics and categories,
    * processing only new conversations since last summary update.
-   * @returns {Promise<void>}
    */
-  async updateAllSummaries() {
+  async updateAllSummaries(): Promise<void> {
     const stage = "updateAllSummaries"
     try {
       const topics = [...this.#db.exec(`SELECT id FROM topics`).toArray()]
@@ -699,7 +700,6 @@ export default {
 
       /**
        * POST /update-summary - Updates a specific category or topic summary.
-       * @returns {Promise<Object>} Update result
        */
       if (request.method === "POST" && url.pathname === "/update-summary") {
         const body = await parseJsonBody(request)
