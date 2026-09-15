@@ -178,7 +178,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
-   * Calls the OpenRouter API with the provided messages.
+   * Calls the OpenRouter API with the provided messages. Prefer the fastest provider.
    */
   async #callOpenRouter(messages: AiConversationEntry[]): Promise<unknown> {
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -192,7 +192,6 @@ export class AssistantDurableObject extends DurableObject<Env> {
       body: JSON.stringify({
         model: this.env.AI_MODEL_OPENROUTER,
         messages,
-        // Prefer the fastest provider serving this model to minimize end-to-end latency.
         provider: { sort: "latency" },
       }),
       signal: AbortSignal.timeout(120_000),
