@@ -1,0 +1,30 @@
+{
+	"name": "pawmc-test",
+	"main": "../src/index.ts",
+	"compatibility_date": "2026-03-17",
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "AssistantDurableObject",
+				"name": "ASSISTANT_DO"
+			}
+		]
+	},
+	"exports": {
+		"AssistantDurableObject": {
+			"type": "durable-object",
+			"storage": "sqlite"
+		}
+	},
+	"vars": {
+		"API_KEY": "test-api-key",
+		"AI_PROVIDER": "openrouter",
+		"AI_MODEL_WORKERS_AI": "@cf/google/gemma-4-26b-a4b-it",
+		"AI_MODEL_OPENROUTER": "test-model",
+		"AI_SYSTEM_INSTRUCTION": "User values succinct and direct outputs.",
+		"OPENROUTER_API_KEY": "test-openrouter-key"
+	},
+	"observability": {
+		"enabled": false
+	}
+}

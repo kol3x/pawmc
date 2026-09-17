@@ -80,6 +80,37 @@ const UpdateSummaryRequest = z.object({
   summary: z.string(),
 })
 
+export interface TopicRow {
+  id: number
+  name: string
+  summary: string
+  updated_at_timestamp: number
+}
+
+export interface CategoryRow extends TopicRow {
+  topics: TopicRow[]
+}
+
+export interface ChatResult {
+  response: string
+  conversationId: number
+}
+
+export interface ConversationDetail {
+  id: number
+  category: string
+  topic: string
+  messages: AiConversationEntry[]
+}
+
+export interface ConversationListEntry {
+  id: number
+  category: string
+  topic: string
+  created_at: number
+  last_message: string
+}
+
 export interface Env extends Cloudflare.Env {
   ASSISTANT_DO: DurableObjectNamespace<AssistantDurableObject>
   API_KEY: string
@@ -221,7 +252,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
    * summary update (i.e. it hasn't been folded into the summary yet). Otherwise, since the
    * existing conversation is considered already summarized, a new conversation is started.
    */
-  async chat(category: string, topic: string, userMessage: string, noteMode: boolean = false) {
+  async chat(category: string, topic: string, userMessage: string, noteMode: boolean = false): Promise<ChatResult> {
     const stage = "chat"
     try {
       if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
@@ -319,23 +350,31 @@ export class AssistantDurableObject extends DurableObject<Env> {
   /**
    * Returns all categories and topics. Meant for listing available contexts and their summaries.
    */
-  async getCategories() {
+  async getCategories(): Promise<CategoryRow[]> {
     const stage = "getCategories"
     try {
       const categories = [
         ...this.#db.exec(`SELECT id, name, summary, updated_at_timestamp FROM categories ORDER BY name`).toArray(),
       ]
-      const result = categories.map((cat) => {
-        const topics = [
+      const result = categories.map((cat) => ({
+        id: Number(cat.id),
+        name: String(cat.name),
+        summary: String(cat.summary),
+        updated_at_timestamp: Number(cat.updated_at_timestamp || 0),
+        topics: [
           ...this.#db
             .exec(
               `SELECT id, name, summary, updated_at_timestamp FROM topics WHERE category_id = ? ORDER BY name`,
               cat.id,
             )
             .toArray(),
-        ]
-        return { ...cat, topics }
-      })
+        ].map((topic) => ({
+          id: Number(topic.id),
+          name: String(topic.name),
+          summary: String(topic.summary),
+          updated_at_timestamp: Number(topic.updated_at_timestamp || 0),
+        })),
+      }))
       console.log(`[INFO][${stage}] Fetched ${result.length} categories`)
       return result
     } catch (err) {
@@ -527,7 +566,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
   async listConversations(
     category: string,
     topic: string,
-  ): Promise<Array<{ id: number; category: string; topic: string; created_at: number; last_message: string }>> {
+  ): Promise<ConversationListEntry[]> {
     const stage = "listConversations"
     let sql = `
         SELECT c.id, c.created_at_timestamp, c.last_message, cat.name as category, t.name as topic
@@ -577,9 +616,9 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
-   * Returns a single conversation with its messages.
+   * Returns a single conversation with its messages, or null when the conversation does not exist.
    */
-  async getConversation(id: number): Promise<{ id: number; category: string; topic: string; messages: unknown }> {
+  async getConversation(id: number): Promise<ConversationDetail | null> {
     const stage = "getConversation"
     const row = this.#db
       .exec(
@@ -592,9 +631,12 @@ export class AssistantDurableObject extends DurableObject<Env> {
       `,
         id,
       )
-      .one()
-    if (!row) throw new Error(`Conversation not found: ${id}`)
-    const messages = JSON.parse(String(row.messages || "[]"))
+      .toArray()[0]
+    if (!row) {
+      console.log(`[INFO][${stage}] Conversation not found: id=${id}`)
+      return null
+    }
+    const messages = JSON.parse(String(row.messages || "[]")) as AiConversationEntry[]
 
     console.log(`[INFO][${stage}] Fetched conversation: id=${id}, messages=${messages.length}`)
     return { id: Number(row.id), category: String(row.category), topic: String(row.topic), messages }
@@ -679,6 +721,7 @@ export default {
         if (!convId) return Response.json({ error: "id query parameter must be a positive integer" }, { status: 400 })
         console.log(`[INFO][${stage}] Fetching conversation: id=${convId}`)
         const result = await stub.getConversation(convId)
+        if (!result) return Response.json({ error: "Conversation not found" }, { status: 404 })
         return Response.json(result)
       }
 
