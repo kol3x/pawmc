@@ -1,8 +1,12 @@
 {
   "compilerOptions": {
     "checkJs": true,
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
     "strict": true,
-    "noEmit": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
@@ -11,7 +15,7 @@
     "noUnusedParameters": true,
     "noImplicitAny": true,
     "useUnknownInCatchVariables": true,
-    "lib": ["ES2022"],
-    "types": []
+    "lib": ["ES2022", "ESNext.Disposable"],
+    "types": ["@cloudflare/vitest-plugin/types"]
   }
 }

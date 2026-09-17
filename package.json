@@ -6,11 +6,15 @@
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
-		"start": "wrangler dev"
+		"start": "wrangler dev",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
+		"@cloudflare/vitest-plugin": "1.1.11",
 		"typescript": "7.0.2",
-		"wrangler": "4.127.0"
+		"vitest": "4.1.11",
+		"wrangler": "4.133.0"
 	},
 	"dependencies": {
 		"zod": "^4.5.4"

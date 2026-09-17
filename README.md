@@ -102,6 +102,18 @@ To switch back, set `AI_PROVIDER` back to `"workers-ai"`.
 
 When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and the action will redeploy automatically.
 
+## Development
+
+The project ships a test suite that runs the worker with its Durable Object and SQLite storage locally (no Cloudflare account or network access needed — AI calls are mocked).
+
+```sh
+npm install
+npm run typecheck   # typechecks src and test
+npm test            # runs the suite in test/index.test.ts
+```
+
+Pushes to `main` and pull requests run both commands via the `CI` workflow before the `Deploy` workflow can ship anything.
+
 ## Free Tier Cloudflare Workers Limits
 
 | Resource | Limit |
