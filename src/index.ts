@@ -1,5 +1,7 @@
 import { DurableObject } from "cloudflare:workers"
-import * as z from "zod"
+import { AiConversationEntry, TOPIC_CONFIDENCE_MIN, distillMicroSummary, firstSentence, resolveTopic, runAI, type TopicCandidate } from "./ai"
+import { errorMessage } from "./errors"
+import { handleRequest } from "./routes"
 
 /**
  * Cloudflare Worker that uses SQLite-backed Durable Object. Works as a personal LLM assistant. It stores conversations and uses summed up context when generating responses.
@@ -9,6 +11,9 @@ import * as z from "zod"
  * - Stores a summary-context for each category and topic. Adjusts these daily by processing new conversations.
  * - When new conversation is started and category or topic is non predifined, it will be created and added to the list of categories.
  * - Endpoint to fetch all categories and topics, and their summaries.
+ * - Categories and topics can be renamed or deleted, and individual messages can be edited or deleted while their conversation is not yet summarized.
+ * - When a chat starts without a topic, a light labeling model proposes ranked topics with confidence; high-confidence picks proceed automatically, low confidence returns candidates for one-click user choice.
+ * - Each topic carries a one-sentence micro summary, distilled on the nightly fold and used for topic picking and UI display.
  *
  * ## Best Practices
  * - Simplicity, reliability, and efficiency.
@@ -17,69 +22,6 @@ import * as z from "zod"
  * - Concise code with minimal formatting and indentation, which prioritizes descriptive element naming and log messages over inline comments to achieve readability.
  */
 
-function isError(err: unknown) {
-  return err instanceof Error
-}
-
-/**
- * Formats a thrown value for logging: the message for Error instances, the stringified value otherwise.
- */
-function errorMessage(err: unknown) {
-  return isError(err) ? err.message : String(err)
-}
-
-/**
- * Parses the `id` query parameter of a conversation route, returning the positive integer id, or null when missing or invalid.
- */
-function parseConversationId(url: URL): number | null {
-  const id = Number(url.searchParams.get("id"))
-  return Number.isInteger(id) && id > 0 ? id : null
-}
-
-/**
- * Parses a JSON request body into an unvalidated object. Returns null when the body is not valid JSON or not a JSON object; callers apply their own field checks.
- */
-async function parseJsonBody(request: Request): Promise<Record<string, any> | null> {
-  try {
-    const body: unknown = await request.json()
-    return typeof body === "object" && body !== null ? (body as Record<string, any>) : null
-  } catch {
-    return null
-  }
-}
-
-const AiConversationEntry = z.object({
-  role: z.string(),
-  content: z.string(),
-})
-
-type AiConversationEntry = z.infer<typeof AiConversationEntry>
-
-const AiResponse = z.object({
-  choices: z.array(
-    z.object({
-      message: z.object({
-        content: z.string(),
-      }),
-    }),
-  ),
-})
-
-type AiResponse = z.infer<typeof AiResponse>
-
-const ChatRequest = z.object({
-  category: z.string().trim().min(1),
-  topic: z.string().trim().min(1),
-  message: z.string().trim().min(1),
-  noteMode: z.boolean().optional(),
-})
-
-const UpdateSummaryRequest = z.object({
-  type: z.enum(["category", "topic"]),
-  id: z.number().int().positive(),
-  summary: z.string(),
-})
-
 export interface TopicRow {
   id: number
   name: string
@@ -87,14 +29,28 @@ export interface TopicRow {
   updated_at_timestamp: number
 }
 
+/**
+ * A topic row as exposed through /categories, adding the one-sentence micro summary used for topic picking and UI display.
+ */
+export interface TopicDetailRow extends TopicRow {
+  micro_summary: string
+}
+
 export interface CategoryRow extends TopicRow {
-  topics: TopicRow[]
+  topics: TopicDetailRow[]
 }
 
 export interface ChatResult {
   response: string
   conversationId: number
+  topic: string
+  topicId: number
 }
+
+/**
+ * Outcome of a DO mutation: "ok" on success, "not_found" when the target row or message index is missing, "name_taken" on rename collisions, "summarized" when the conversation has already been folded into its summary.
+ */
+export type MutationResult = { status: "ok" | "not_found" | "name_taken" | "summarized" }
 
 export interface ConversationDetail {
   id: number
@@ -109,6 +65,14 @@ export interface ConversationListEntry {
   topic: string
   created_at: number
   last_message: string
+}
+
+/**
+ * Returned by chat() when topic autogen confidence is too low: nothing was stored and the caller should offer the candidates as one-click choices.
+ */
+export interface TopicNeededResult {
+  topicNeeded: true
+  candidates: TopicCandidate[]
 }
 
 export interface Env extends Cloudflare.Env {
@@ -143,6 +107,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
         category_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         summary TEXT NOT NULL DEFAULT '',
+        micro_summary TEXT NOT NULL DEFAULT '',
         updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now')),
         UNIQUE(category_id, name),
         FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
@@ -170,65 +135,14 @@ export class AssistantDurableObject extends DurableObject<Env> {
       this.#db.exec(`ALTER TABLE topics ADD COLUMN updated_at_timestamp INTEGER DEFAULT (strftime('%s', 'now'))`)
     }
 
+    if (!topicColumns.some((col) => col.name === "micro_summary")) {
+      this.#db.exec(`ALTER TABLE topics ADD COLUMN micro_summary TEXT NOT NULL DEFAULT ''`)
+    }
+
     const convColumns = this.#db.exec(`PRAGMA table_info(conversations)`).toArray()
     if (!convColumns.some((col) => col.name === "last_message")) {
       this.#db.exec(`ALTER TABLE conversations ADD COLUMN last_message TEXT NOT NULL DEFAULT ''`)
     }
-
-    if (!convColumns.some((col) => col.name === "context_categories")) {
-      this.#db.exec(`ALTER TABLE conversations ADD COLUMN context_categories TEXT NOT NULL DEFAULT '[]'`)
-    }
-  }
-
-  /**
-   * Runs the AI model with the given system prompt and user messages.
-   */
-  async #runAI(systemPrompt: string, conversation: AiConversationEntry[]): Promise<string> {
-    const messages = [{ role: "system", content: systemPrompt }, ...conversation]
-
-    const providerSetting: string = this.env.AI_PROVIDER || "workers-ai"
-    const provider = providerSetting === "openrouter" ? "openrouter" : "workers-ai"
-    const res =
-      provider === "openrouter"
-        ? await this.#callOpenRouter(messages)
-        : await this.env.AI.run(this.env.AI_MODEL_WORKERS_AI, {
-            messages: messages as unknown as ChatCompletionMessageParam[],
-          })
-
-    const aiResponse = AiResponse.safeParse(res)
-
-    if (!aiResponse.success || !aiResponse.data.choices[0]) {
-      throw new Error("AI returned unexpected object structure.")
-    }
-
-    const content = aiResponse.data.choices[0].message.content
-    if (!content) {
-      throw new Error("AI returned empty response or unexpected object structure.")
-    }
-    return content
-  }
-
-  /**
-   * Calls the OpenRouter API with the provided messages. Prefer the fastest provider.
-   */
-  async #callOpenRouter(messages: AiConversationEntry[]): Promise<unknown> {
-    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/kol3x/pawmc",
-        "X-Title": "pawmc",
-      },
-      body: JSON.stringify({
-        model: this.env.AI_MODEL_OPENROUTER,
-        messages,
-        provider: { sort: "latency" },
-      }),
-      signal: AbortSignal.timeout(120_000),
-    })
-    if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
-    return resp.json()
   }
 
   /**
@@ -246,17 +160,43 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
+   * Loads a conversation for editing and applies the unsummarized rule: a conversation stays mutable while its creation timestamp is at or after the topic's last summary update — the same freshness rule chat() uses to reuse conversations.
+   */
+  #loadMutableConversation(id: number): { messages: AiConversationEntry[] } | "not_found" | "summarized" {
+    const [row] = this.#db
+      .exec(
+        `SELECT c.messages, c.created_at_timestamp, t.updated_at_timestamp AS topic_updated_at
+         FROM conversations c
+         JOIN topics t ON t.id = c.topic_id
+         WHERE c.id = ?`,
+        id,
+      )
+      .toArray()
+    if (!row) return "not_found"
+    if (Number(row.created_at_timestamp || 0) < Number(row.topic_updated_at || 0)) return "summarized"
+
+    try {
+      return { messages: AiConversationEntry.array().parse(JSON.parse(String(row.messages || "[]"))) }
+    } catch (err) {
+      console.error(`[ERROR] Failed to parse messages for conversation=${id}: ${errorMessage(err)}`)
+      throw new Error(`Failed to parse messages for conversation=${id}`)
+    }
+  }
+
+  /**
    * Processes a user message within a specified category and topic, generates an AI response using the stored conversation history and summary context, and updates the conversation. If the category or topic doesn't exist, it will be created.
    *
    * Reuses the topic's latest conversation only if it was created at or after the topic's last
    * summary update (i.e. it hasn't been folded into the summary yet). Otherwise, since the
    * existing conversation is considered already summarized, a new conversation is started.
+   *
+   * When the topic is empty, the light labeling model ranks topic candidates with confidence: at TOPIC_CONFIDENCE_MIN or above the top candidate proceeds like an explicit topic (new labels also carry a one-sentence micro summary), below it a TopicNeededResult is returned with nothing stored so the caller can offer one-click choices.
    */
-  async chat(category: string, topic: string, userMessage: string, noteMode: boolean = false): Promise<ChatResult> {
+  async chat(category: string, topic: string, userMessage: string, noteMode: boolean = false): Promise<ChatResult | TopicNeededResult> {
     const stage = "chat"
     try {
-      if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
-        throw new Error(`[${stage}] Invalid input: category, topic, and userMessage are required`)
+      if (!category?.trim() || !userMessage?.trim())
+        throw new Error(`[${stage}] Invalid input: category and userMessage are required`)
 
       const categoryRow = this.#db
         .exec(
@@ -266,14 +206,34 @@ export class AssistantDurableObject extends DurableObject<Env> {
         .one()
       console.log(`[INFO][${stage}] Category resolved: id=${categoryRow.id}, name=${category}`)
 
+      const providedTopic = topic?.trim() || ""
+      let topicName = providedTopic
+      let newTopicMicro: string | undefined
+
+      if (!topicName) {
+        const resolved = await resolveTopic(this.env, this.#db, Number(categoryRow.id), userMessage.trim())
+        if (resolved.topic) {
+          topicName = resolved.topic
+        } else {
+          const top = resolved.candidates[0]
+          if (!top || top.confidence < TOPIC_CONFIDENCE_MIN) {
+            console.log(`[INFO][${stage}] Topic confidence too low, asking user: candidates=${resolved.candidates.length}`)
+            return { topicNeeded: true, candidates: resolved.candidates }
+          }
+          topicName = top.name
+          newTopicMicro = top.description
+        }
+      }
+
       const topicRow = this.#db
         .exec(
-          `INSERT INTO topics (category_id, name) VALUES (?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary, updated_at_timestamp`,
+          `INSERT INTO topics (category_id, name, micro_summary) VALUES (?, ?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary, updated_at_timestamp`,
           categoryRow.id,
-          topic.trim(),
+          topicName,
+          newTopicMicro || "",
         )
         .one()
-      console.log(`[INFO][${stage}] Topic resolved: id=${topicRow.id}, name=${topic}`)
+      console.log(`[INFO][${stage}] Topic resolved: id=${topicRow.id}, name=${topicName}`)
 
       const [existingConversation] = this.#db
         .exec(
@@ -322,12 +282,12 @@ export class AssistantDurableObject extends DurableObject<Env> {
 
             return [
               this.env.AI_SYSTEM_INSTRUCTION,
-              `You are a personal assistant helping with: ${category} / ${topic}.`,
+              `You are a personal assistant helping with: ${category} / ${topicName}.`,
               ...contextParts,
             ].join("\n")
           })()
 
-      const assistantMessage = await this.#runAI(systemPrompt, messages)
+      const assistantMessage = await runAI(this.env, systemPrompt, messages)
 
       messages.push({ role: "assistant", content: assistantMessage })
 
@@ -340,7 +300,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
       )
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`)
 
-      return { response: assistantMessage, conversationId: Number(conversationId) }
+      return { response: assistantMessage, conversationId: Number(conversationId), topic: topicName, topicId: Number(topicRow.id) }
     } catch (err) {
       console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
       throw err
@@ -364,7 +324,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
         topics: [
           ...this.#db
             .exec(
-              `SELECT id, name, summary, updated_at_timestamp FROM topics WHERE category_id = ? ORDER BY name`,
+              `SELECT id, name, summary, micro_summary, updated_at_timestamp FROM topics WHERE category_id = ? ORDER BY name`,
               cat.id,
             )
             .toArray(),
@@ -372,6 +332,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
           id: Number(topic.id),
           name: String(topic.name),
           summary: String(topic.summary),
+          micro_summary: String(topic.micro_summary || ""),
           updated_at_timestamp: Number(topic.updated_at_timestamp || 0),
         })),
       }))
@@ -384,7 +345,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
-   * Incrementally updates a topic's summary by processing only new conversations since the last summary update.
+   * Incrementally updates a topic's summary by processing only new conversations since the last summary update. The summary fold and the one-sentence micro summary distillation are separate AI calls.
    */
   async updateTopicSummaryIncremental(topicId: number): Promise<void> {
     const stage = "updateTopicSummaryIncremental"
@@ -438,7 +399,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
         `[INFO][${stage}] Updating topic summary: id=${topic.id}, name=${topic.name}, newMessages=${newMessages.length}`,
       )
 
-      const newSummary = await this.#runAI(summaryPrompt, [{ role: "user", content: JSON.stringify(newMessages) }])
+      const newSummary = await runAI(this.env, summaryPrompt, [{ role: "user", content: JSON.stringify(newMessages) }])
 
       this.#db.exec(
         `UPDATE topics SET summary = ?, updated_at_timestamp = strftime('%s', 'now') WHERE id = ?`,
@@ -446,6 +407,10 @@ export class AssistantDurableObject extends DurableObject<Env> {
         topic.id,
       )
       console.log(`[INFO][${stage}] Topic summary updated: topic=${topic.id}, name=${topic.name}`)
+
+      const micro = (await distillMicroSummary(this.env, newSummary)) || firstSentence(newSummary)
+      this.#db.exec(`UPDATE topics SET micro_summary = ? WHERE id = ?`, micro, topic.id)
+      console.log(`[INFO][${stage}] Topic micro summary updated: topic=${topic.id}`)
     } catch (err) {
       console.error(`[ERROR][${stage}] Failed to update topic summary: ${errorMessage(err)}`)
       throw err
@@ -497,7 +462,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
         `[INFO][${stage}] Updating category summary: id=${category.id}, name=${category.name}, updatedTopics=${updatedTopics.length}`,
       )
 
-      const newSummary = await this.#runAI(summaryPrompt, [
+      const newSummary = await runAI(this.env, summaryPrompt, [
         { role: "user", content: "Generate the updated category summary." },
       ])
 
@@ -514,17 +479,21 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
-   * Updates or clears a summary for a category or topic. Empty summary = forget.
+   * Updates or clears a summary for a category or topic. Empty summary = forget; topics also reset their micro summary. For topics an optional microSummary overrides the locally derived first-sentence default; it is ignored for categories.
    */
-  updateSummary(type: "category" | "topic", id: number, summary: string): { success: true } {
+  updateSummary(type: "category" | "topic", id: number, summary: string, microSummary?: string): { success: true } {
     const stage = "updateSummary"
     try {
       if (!["category", "topic"].includes(type)) throw new Error(`[${stage}] Invalid type: ${type}`)
       if (typeof id !== "number" || id <= 0) throw new Error(`[${stage}] Invalid id: ${id}`)
 
-      const table = type === "category" ? "categories" : "topics"
       const timestamp = summary === "" ? 0 : Math.floor(Date.now() / 1000)
-      this.#db.exec(`UPDATE ${table} SET summary = ?, updated_at_timestamp = ? WHERE id = ?`, summary, timestamp, id)
+      if (type === "category") {
+        this.#db.exec(`UPDATE categories SET summary = ?, updated_at_timestamp = ? WHERE id = ?`, summary, timestamp, id)
+      } else {
+        const micro = summary === "" ? "" : microSummary?.trim() || firstSentence(summary)
+        this.#db.exec(`UPDATE topics SET summary = ?, micro_summary = ?, updated_at_timestamp = ? WHERE id = ?`, summary, micro, timestamp, id)
+      }
       const updated = this.#db.exec(`SELECT changes() AS count`).one().count
       if (!updated) throw new Error(`[${stage}] ${type} not found: ${id}`)
 
@@ -537,8 +506,121 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
+   * Renames a category. Returns "name_taken" when another category already uses the name; its topics, summaries, and conversations are unaffected.
+   */
+  renameCategory(id: number, name: string): MutationResult {
+    const stage = "renameCategory"
+    try {
+      const trimmed = name?.trim()
+      if (typeof id !== "number" || id <= 0 || !trimmed) throw new Error(`[${stage}] Invalid input: id and name are required`)
+
+      const [category] = this.#db.exec(`SELECT id FROM categories WHERE id = ?`, id).toArray()
+      if (!category) {
+        console.log(`[INFO][${stage}] Category not found: id=${id}`)
+        return { status: "not_found" }
+      }
+
+      const [conflict] = this.#db.exec(`SELECT id FROM categories WHERE name = ? AND id != ?`, trimmed, id).toArray()
+      if (conflict) {
+        console.log(`[INFO][${stage}] Category name already exists: ${trimmed}`)
+        return { status: "name_taken" }
+      }
+
+      this.#db.exec(`UPDATE categories SET name = ? WHERE id = ?`, trimmed, id)
+      console.log(`[INFO][${stage}] Category renamed: id=${id}, name=${trimmed}`)
+      return { status: "ok" }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
+   * Renames a topic within its category. Returns "name_taken" when a sibling topic already uses the name; its summary and conversations are unaffected.
+   */
+  renameTopic(id: number, name: string): MutationResult {
+    const stage = "renameTopic"
+    try {
+      const trimmed = name?.trim()
+      if (typeof id !== "number" || id <= 0 || !trimmed) throw new Error(`[${stage}] Invalid input: id and name are required`)
+
+      const [topic] = this.#db.exec(`SELECT id, category_id FROM topics WHERE id = ?`, id).toArray()
+      if (!topic) {
+        console.log(`[INFO][${stage}] Topic not found: id=${id}`)
+        return { status: "not_found" }
+      }
+
+      const [conflict] = this.#db
+        .exec(`SELECT id FROM topics WHERE category_id = ? AND name = ? AND id != ?`, topic.category_id, trimmed, id)
+        .toArray()
+      if (conflict) {
+        console.log(`[INFO][${stage}] Topic name already exists in category=${topic.category_id}: ${trimmed}`)
+        return { status: "name_taken" }
+      }
+
+      this.#db.exec(`UPDATE topics SET name = ? WHERE id = ?`, trimmed, id)
+      console.log(`[INFO][${stage}] Topic renamed: id=${id}, name=${trimmed}`)
+      return { status: "ok" }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
+   * Deletes a category with all of its topics and conversations. Cascades are explicit so the result never depends on foreign-key enforcement.
+   */
+  deleteCategory(id: number): MutationResult {
+    const stage = "deleteCategory"
+    try {
+      if (typeof id !== "number" || id <= 0) throw new Error(`[${stage}] Invalid id: ${id}`)
+
+      this.#db.exec(`DELETE FROM conversations WHERE topic_id IN (SELECT id FROM topics WHERE category_id = ?)`, id)
+      this.#db.exec(`DELETE FROM topics WHERE category_id = ?`, id)
+      this.#db.exec(`DELETE FROM categories WHERE id = ?`, id)
+      const deleted = this.#db.exec(`SELECT changes() AS count`).one().count
+      if (!deleted) {
+        console.log(`[INFO][${stage}] Category not found: id=${id}`)
+        return { status: "not_found" }
+      }
+
+      console.log(`[INFO][${stage}] Category deleted with topics and conversations: id=${id}`)
+      return { status: "ok" }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
+   * Deletes a topic with all of its conversations.
+   */
+  deleteTopic(id: number): MutationResult {
+    const stage = "deleteTopic"
+    try {
+      if (typeof id !== "number" || id <= 0) throw new Error(`[${stage}] Invalid id: ${id}`)
+
+      this.#db.exec(`DELETE FROM conversations WHERE topic_id = ?`, id)
+      this.#db.exec(`DELETE FROM topics WHERE id = ?`, id)
+      const deleted = this.#db.exec(`SELECT changes() AS count`).one().count
+      if (!deleted) {
+        console.log(`[INFO][${stage}] Topic not found: id=${id}`)
+        return { status: "not_found" }
+      }
+
+      console.log(`[INFO][${stage}] Topic deleted with conversations: id=${id}`)
+      return { status: "ok" }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
    * Updates all summaries incrementally. Iterates through all topics and categories,
-   * processing only new conversations since last summary update.
+   * processing only new conversations since last summary update. Also backfills missing
+   * topic micro summaries for topics that already have a summary — this heals databases
+   * created before micro summaries existed.
    */
   async updateAllSummaries(): Promise<void> {
     const stage = "updateAllSummaries"
@@ -547,6 +629,14 @@ export class AssistantDurableObject extends DurableObject<Env> {
       for (const topic of topics) {
         await this.updateTopicSummaryIncremental(Number(topic.id))
       }
+
+      const microless = [...this.#db.exec(`SELECT id, summary FROM topics WHERE summary != '' AND micro_summary = ''`).toArray()]
+      for (const topic of microless) {
+        const summary = String(topic.summary)
+        const micro = (await distillMicroSummary(this.env, summary)) || firstSentence(summary)
+        this.#db.exec(`UPDATE topics SET micro_summary = ? WHERE id = ?`, micro, Number(topic.id))
+      }
+      if (microless.length) console.log(`[INFO][${stage}] Backfilled ${microless.length} topic micro summaries`)
 
       const categories = [...this.#db.exec(`SELECT id FROM categories`).toArray()]
       for (const category of categories) {
@@ -616,6 +706,74 @@ export class AssistantDurableObject extends DurableObject<Env> {
   }
 
   /**
+   * Edits the content of one message in an unsummarized conversation, keeping its role. Recomputes last_message when the edited message is the latest one.
+   */
+  updateMessage(id: number, index: number, content: string): MutationResult {
+    const stage = "updateMessage"
+    try {
+      const loaded = this.#loadMutableConversation(id)
+      if (typeof loaded === "string") return { status: loaded }
+
+      const target = loaded.messages[index]
+      if (!target) {
+        console.log(`[INFO][${stage}] Message index out of range: conversation=${id}, index=${index}`)
+        return { status: "not_found" }
+      }
+
+      loaded.messages[index] = { role: target.role, content: content.trim() }
+      const lastMessage = (loaded.messages[loaded.messages.length - 1]?.content || "").slice(0, 200)
+      this.#db.exec(
+        `UPDATE conversations SET messages = ?, last_message = ? WHERE id = ?`,
+        JSON.stringify(loaded.messages),
+        lastMessage,
+        id,
+      )
+      console.log(`[INFO][${stage}] Message updated: conversation=${id}, index=${index}`)
+      return { status: "ok" }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
+   * Deletes one message from an unsummarized conversation. Deleting the last remaining message deletes the conversation.
+   */
+  deleteMessage(id: number, index: number): MutationResult {
+    const stage = "deleteMessage"
+    try {
+      const loaded = this.#loadMutableConversation(id)
+      if (typeof loaded === "string") return { status: loaded }
+
+      if (!Number.isInteger(index) || index < 0 || index >= loaded.messages.length) {
+        console.log(`[INFO][${stage}] Message index out of range: conversation=${id}, index=${index}`)
+        return { status: "not_found" }
+      }
+
+      loaded.messages.splice(index, 1)
+
+      if (!loaded.messages.length) {
+        this.#db.exec(`DELETE FROM conversations WHERE id = ?`, id)
+        console.log(`[INFO][${stage}] Conversation deleted after removing its last message: id=${id}`)
+        return { status: "ok" }
+      }
+
+      const lastMessage = (loaded.messages[loaded.messages.length - 1]?.content || "").slice(0, 200)
+      this.#db.exec(
+        `UPDATE conversations SET messages = ?, last_message = ? WHERE id = ?`,
+        JSON.stringify(loaded.messages),
+        lastMessage,
+        id,
+      )
+      console.log(`[INFO][${stage}] Message deleted: conversation=${id}, index=${index}`)
+      return { status: "ok" }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
    * Returns a single conversation with its messages, or null when the conversation does not exist.
    */
   async getConversation(id: number): Promise<ConversationDetail | null> {
@@ -662,107 +820,9 @@ export default {
     }
   },
   /**
-   * HTTP request handler that routes requests to chat, category, conversation, and summary management endpoints. Validates API key authorization and processes GET, POST, and DELETE methods.
+   * HTTP request handler delegating to the route table in ./routes.
    */
   async fetch(request: Request, env: Env, _ctx: ExecutionContext) {
-    const stage = "fetch"
-    try {
-      const url = new URL(request.url)
-      const stub = env.ASSISTANT_DO.getByName("singleton")
-
-      const authHeader = request.headers.get("Authorization")
-      const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null
-      if (!apiKey || apiKey !== env.API_KEY || !env.API_KEY) {
-        return Response.json({ error: "Unauthorized" }, { status: 401 })
-      }
-
-      /**
-       * POST /chat - Sends a message to the AI assistant and returns a response with optional context from other topics.
-       */
-      if (request.method === "POST" && url.pathname === "/chat") {
-        const body = await parseJsonBody(request)
-        if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 })
-        const parsed = ChatRequest.safeParse(body)
-        if (!parsed.success) return Response.json({ error: "category, topic, and message are required" }, { status: 400 })
-        const { category, topic, message, noteMode } = parsed.data
-
-        console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, noteMode=${!!noteMode}`)
-        const result = await stub.chat(category, topic, message, !!noteMode)
-        return Response.json(result)
-      }
-
-      /**
-       * GET /categories - Lists all categories with their nested topics and summaries.
-       */
-      if (request.method === "GET" && url.pathname === "/categories") {
-        console.log(`[INFO][${stage}] Fetching categories`)
-        const categories = await stub.getCategories()
-        return Response.json(categories)
-      }
-
-      /**
-       * GET /conversations - Lists conversations, optionally filtered by category and/or topic.
-       */
-      if (request.method === "GET" && url.pathname === "/conversations") {
-        const category = url.searchParams.get("category") || ""
-        const topic = url.searchParams.get("topic") || ""
-        console.log(
-          `[INFO][${stage}] Listing conversations${category ? ` category=${category}` : ""}${topic ? ` topic=${topic}` : ""}`,
-        )
-        const result = await stub.listConversations(category, topic)
-        return Response.json(result)
-      }
-
-      /**
-       * GET /conversation - Retrieves a single conversation by ID.
-       */
-      if (request.method === "GET" && url.pathname === "/conversation") {
-        const convId = parseConversationId(url)
-        if (!convId) return Response.json({ error: "id query parameter must be a positive integer" }, { status: 400 })
-        console.log(`[INFO][${stage}] Fetching conversation: id=${convId}`)
-        const result = await stub.getConversation(convId)
-        if (!result) return Response.json({ error: "Conversation not found" }, { status: 404 })
-        return Response.json(result)
-      }
-
-      /**
-       * DELETE /conversation - Deletes a conversation by ID.
-       */
-      if (request.method === "DELETE" && url.pathname === "/conversation") {
-        const convId = parseConversationId(url)
-        if (!convId) return Response.json({ error: "id query parameter must be a positive integer" }, { status: 400 })
-        console.log(`[INFO][${stage}] Deleting conversation: id=${convId}`)
-        const result = await stub.deleteConversation(convId)
-        return Response.json(result)
-      }
-
-      /**
-       * POST /update-summaries - Manually triggers an update of all summaries.
-       */
-      if (request.method === "POST" && url.pathname === "/update-summaries") {
-        console.log(`[INFO][${stage}] Manual summary update triggered`)
-        await stub.updateAllSummaries()
-        console.log(`[INFO][${stage}] Manual summary update completed`)
-        return Response.json({ success: true })
-      }
-
-      /**
-       * POST /update-summary - Updates a specific category or topic summary.
-       */
-      if (request.method === "POST" && url.pathname === "/update-summary") {
-        const body = await parseJsonBody(request)
-        if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 })
-        const parsed = UpdateSummaryRequest.safeParse(body)
-        if (!parsed.success) return Response.json({ error: "type, id, and summary are required" }, { status: 400 })
-
-        const result = await stub.updateSummary(parsed.data.type, parsed.data.id, parsed.data.summary)
-        return Response.json(result)
-      }
-
-      return Response.json({ error: "Not found" }, { status: 404 })
-    } catch (err) {
-      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
-      return Response.json({ error: "Internal server error" }, { status: 500 })
-    }
+    return handleRequest(request, env)
   },
 }
