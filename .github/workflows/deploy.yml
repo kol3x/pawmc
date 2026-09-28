@@ -14,6 +14,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - run: npm run build -w web
       - name: Deploy
         run: |
           printf 'API_KEY=%s\n' "$PAWMC_API_KEY" > "$RUNNER_TEMP/pawmc-secrets"
