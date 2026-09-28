@@ -37,7 +37,7 @@
 		"enabled": true
 	},
 	"assets": {
-		"directory": "./html",
+		"directory": "./web/dist",
 		"binding": "ASSETS"
 	}
 }

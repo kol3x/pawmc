@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+	--color-bg: oklch(0.145 0.004 286);
+	--color-panel: oklch(0.185 0.005 286);
+	--color-panel-2: oklch(0.225 0.006 286);
+	--color-line: oklch(0.29 0.008 286);
+	--color-ink: oklch(0.94 0.004 286);
+	--color-dim: oklch(0.66 0.008 286);
+	--color-faint: oklch(0.46 0.008 286);
+	--color-accent: oklch(0.62 0.18 292);
+	--color-accent-soft: oklch(0.62 0.18 292 / 0.14);
+	--color-danger: oklch(0.63 0.18 25);
+	--color-danger-soft: oklch(0.63 0.18 25 / 0.14);
+	--color-fresh: oklch(0.75 0.16 155);
+	--color-aging: oklch(0.78 0.14 85);
+	--color-stale: oklch(0.7 0.13 55);
+
+	--font-sans:
+		ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+		sans-serif;
+	--font-mono:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body {
+	height: 100%;
+}
+
+body {
+	background: var(--color-bg);
+	color: var(--color-ink);
+	font-family: var(--font-sans);
+	overscroll-behavior: none;
+	-webkit-font-smoothing: antialiased;
+}
+
+::selection {
+	background: color-mix(in oklch, var(--color-accent) 35%, transparent);
+}
+
+:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 1px;
+}
+
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-line) transparent;
+}
+
+/* Markdown output inside bubbles */
+.md > * + * {
+	margin-top: 0.6em;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+	font-weight: 600;
+	margin-top: 0.8em;
+}
+.md ul,
+.md ol {
+	padding-left: 1.4em;
+	list-style: revert;
+}
+.md pre {
+	background: color-mix(in oklch, var(--color-panel-2) 80%, transparent);
+	border: 1px solid var(--color-line);
+	border-radius: 0.5rem;
+	padding: 0.7em 0.9em;
+	overflow-x: auto;
+	font-size: 0.875em;
+}
+.md code {
+	font-family: var(--font-mono);
+	font-size: 0.875em;
+	background: var(--color-panel-2);
+	border-radius: 0.3rem;
+	padding: 0.1em 0.35em;
+}
+.md pre > code {
+	background: none;
+	padding: 0;
+}
+.md a {
+	color: var(--color-accent);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.md blockquote {
+	border-left: 2px solid var(--color-line);
+	padding-left: 0.8em;
+	color: var(--color-dim);
+}
+.md table {
+	border-collapse: collapse;
+}
+.md th,
+.md td {
+	border: 1px solid var(--color-line);
+	padding: 0.3em 0.6em;
+}
