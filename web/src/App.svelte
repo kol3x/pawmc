@@ -222,7 +222,7 @@
 			tabindex="-1"
 			onclick={() => (memoryOpen = false)}
 		></button>
-		<div class="relative flex w-80 max-w-[85vw] flex-col border-r border-line bg-bg shadow-2xl">
+		<div class="relative flex w-full flex-col bg-bg shadow-2xl">
 			<MemoryBar onclose={() => (memoryOpen = false)} />
 		</div>
 	</div>

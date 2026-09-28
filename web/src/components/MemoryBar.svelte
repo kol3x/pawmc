@@ -3,6 +3,7 @@ import { app } from "../lib/appState.svelte"
 import { api } from "../api"
 import { relativeTime } from "../lib/freshness"
 import { renderMarkdown } from "../lib/markdown"
+import { foldedSummary, type FoldedSummary } from "../lib/summary"
 import { pushToast } from "../lib/toasts.svelte"
 import type { SummaryType } from "../api-types"
 import ConfirmModal from "./ConfirmModal.svelte"
@@ -21,17 +22,22 @@ interface Props {
 }
 
 /**
- * Left memory panel: the active topic's memory and the category overview, always visible,
- * with revise/forget/refresh actions.
+ * Left memory panel: the active topic's memory and the category overview as content-sized
+ * cards. Large summaries fold under their bold headers (or a single spoiler when they lack
+ * header structure); empty summaries render as one compact line. A mobile-only tab switcher
+ * shows one card at a time; both cards stay stacked on md+ screens.
  */
 let { onclose }: Props = $props()
 let editing = $state<SummaryType | null>(null)
 let editText = $state("")
 let forgetType = $state<SummaryType | null>(null)
 let refreshing = $state(false)
+let mobileTab = $state<"topic" | "category">("topic")
 
 const topic = $derived(app.selectedTopic)
 const category = $derived(app.selectedCategory)
+const topicFolded = $derived(topic?.summary ? foldedSummary(topic.summary) : null)
+const categoryFolded = $derived(category?.summary ? foldedSummary(category.summary) : null)
 
 function startEdit(card: MemoryCard) {
 	editText = card.summary
@@ -90,7 +96,45 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err)
 }
+
+/**
+ * Index of the first headered section — the one the accordion opens by default.
+ */
+function firstHeaderedIndex(folded: FoldedSummary): number {
+	return folded.sections.findIndex((section) => section.header !== null)
+}
 </script>
+
+{#snippet foldedBody(folded: FoldedSummary, fullText: string)}
+	{#if folded.mode === "accordion"}
+		<div class="flex flex-col gap-1">
+			{#each folded.sections as section, i (i)}
+				{#if section.header === null}
+					<div class="md text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(section.body)}</div>
+				{:else}
+					<details class="group" open={i === firstHeaderedIndex(folded)}>
+						<summary class="flex cursor-pointer select-none list-none items-center gap-1.5 rounded-md py-1 text-sm font-semibold text-ink transition-colors hover:text-accent [&::-webkit-details-marker]:hidden">
+							<svg class="shrink-0 text-faint transition-transform group-open:rotate-90" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg>
+							<span class="min-w-0 flex-1">{section.header}</span>
+						</summary>
+						<div class="md py-1 pl-5 text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(section.body)}</div>
+					</details>
+				{/if}
+			{/each}
+		</div>
+	{:else if folded.mode === "spoiler"}
+		<details class="group">
+			<summary class="flex cursor-pointer select-none list-none items-center gap-1.5 rounded-md py-1 text-sm font-semibold text-ink transition-colors hover:text-accent [&::-webkit-details-marker]:hidden">
+				<svg class="shrink-0 text-faint transition-transform group-open:rotate-90" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg>
+				<span class="min-w-0 flex-1">Show summary</span>
+			</summary>
+			<div class="md py-1 text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(fullText)}</div>
+		</details>
+	{:else}
+		<div class="md text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(fullText)}</div>
+	{/if}
+{/snippet}
+
 <div class="flex min-h-0 flex-1 flex-col">
 	<div class="flex items-center justify-between border-b border-line px-4 py-2.5">
 		<span class="text-[10px] font-semibold uppercase tracking-wide text-faint">Memory</span>
@@ -115,76 +159,102 @@ function errorMessage(err: unknown): string {
 			{/if}
 		</div>
 	</div>
-	<div class="flex min-h-0 flex-1 flex-col gap-3 p-3">
+	{#if category}
+		<div class="flex gap-1 border-b border-line px-3 py-2 md:hidden">
+			<button
+				class="flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors {mobileTab === 'topic' ? 'bg-accent-soft text-accent' : 'text-dim hover:bg-panel-2 hover:text-ink'}"
+				onclick={() => (mobileTab = "topic")}
+			>Topic memory</button>
+			<button
+				class="flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors {mobileTab === 'category' ? 'bg-accent-soft text-accent' : 'text-dim hover:bg-panel-2 hover:text-ink'}"
+				onclick={() => (mobileTab = "category")}
+			>Overview</button>
+		</div>
+	{/if}
+	<div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
 		{#if !category}
 			<p class="px-1 text-xs leading-relaxed text-faint">
 				Pick a category to see its memory build here as conversations get folded.
 			</p>
 		{:else}
 			{#if topic}
-				<div class="flex min-h-0 flex-1 flex-col rounded-xl border border-line bg-panel">
-					<div class="flex items-center gap-2 border-b border-line px-3 py-2">
-						<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Topic memory</h3>
-						<span class="text-[10px] text-faint">{relativeTime(topic.updated_at_timestamp)}</span>
-						<div class="flex-1"></div>
-						<button class="text-faint transition-colors hover:text-ink" title="Revise" onclick={() => startEdit({ type: "topic", label: "Topic memory", summary: topic.summary, meta: "", id: topic.id })}>
-							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
-						</button>
-						<button class="text-faint transition-colors hover:text-danger" title="Forget" onclick={() => (forgetType = "topic")}>
-							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-						</button>
-					</div>
-					<div class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-						{#if editing === "topic"}
-							<textarea
-								bind:value={editText}
-								rows="8"
-								class="w-full resize-y rounded-lg border border-accent/60 bg-bg p-3 text-sm leading-relaxed focus:border-accent focus:outline-none"
-							></textarea>
-							<div class="mt-2 flex justify-end gap-2">
-								<button class="rounded-lg border border-line px-3 py-1.5 text-xs text-dim hover:text-ink" onclick={() => (editing = null)}>Cancel</button>
-								<button class="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/85" onclick={() => void saveEdit({ type: "topic", label: "Topic memory", summary: topic.summary, meta: "", id: topic.id })}>Save</button>
-							</div>
-						{:else if topic.summary}
-							<div class="md text-sm leading-relaxed text-dim">{@html renderMarkdown(topic.summary)}</div>
-						{:else}
-							<p class="text-xs text-faint">No topic memory yet — it builds as conversations get folded.</p>
-						{/if}
-					</div>
-				</div>
-			{:else}
-				<p class="px-1 text-xs text-faint">No topic selected — memory appears once a topic is active.</p>
-			{/if}
-			<div class="flex min-h-0 flex-1 flex-col rounded-xl border border-line bg-panel">
-				<div class="flex items-center gap-2 border-b border-line px-3 py-2">
-					<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Category overview</h3>
-					<span class="text-[10px] text-faint">{relativeTime(category.updated_at_timestamp)}</span>
-					<div class="flex-1"></div>
-					<button class="text-faint transition-colors hover:text-ink" title="Revise" onclick={() => startEdit({ type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id })}>
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
-					</button>
-					<button class="text-faint transition-colors hover:text-danger" title="Forget" onclick={() => (forgetType = "category")}>
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-					</button>
-				</div>
-				<div class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-					{#if editing === "category"}
+				{#if editing === "topic"}
+					<div class="flex flex-col rounded-xl border border-line bg-panel p-3 {mobileTab === 'topic' ? 'flex' : 'hidden'} md:flex">
 						<textarea
 							bind:value={editText}
 							rows="8"
-							class="w-full resize-y rounded-lg border border-accent/60 bg-bg p-3 text-sm leading-relaxed focus:border-accent focus:outline-none"
+							class="w-full resize-y rounded-lg border border-accent/60 bg-bg p-3 text-sm leading-relaxed focus:border-accent focus:outline-none md:text-base"
 						></textarea>
 						<div class="mt-2 flex justify-end gap-2">
 							<button class="rounded-lg border border-line px-3 py-1.5 text-xs text-dim hover:text-ink" onclick={() => (editing = null)}>Cancel</button>
-							<button class="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/85" onclick={() => void saveEdit({ type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id })}>Save</button>
+							<button class="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/85" onclick={() => void saveEdit({ type: "topic", label: "Topic memory", summary: topic.summary, meta: "", id: topic.id })}>Save</button>
 						</div>
-					{:else if category.summary}
-						<div class="md text-sm leading-relaxed text-dim">{@html renderMarkdown(category.summary)}</div>
-					{:else}
-						<p class="text-xs text-faint">No category overview yet — it builds from topic memories.</p>
-					{/if}
+					</div>
+				{:else if topicFolded}
+					<div class="flex flex-col rounded-xl border border-line bg-panel {mobileTab === 'topic' ? 'flex' : 'hidden'} md:flex">
+						<div class="flex items-center gap-2 border-b border-line px-3 py-2">
+							<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Topic memory</h3>
+							<span class="text-[10px] text-faint">{relativeTime(topic.updated_at_timestamp)}</span>
+							<div class="flex-1"></div>
+							<button class="text-faint transition-colors hover:text-ink" title="Revise" onclick={() => startEdit({ type: "topic", label: "Topic memory", summary: topic.summary, meta: "", id: topic.id })}>
+								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+							</button>
+							<button class="text-faint transition-colors hover:text-danger" title="Forget" onclick={() => (forgetType = "topic")}>
+								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+							</button>
+						</div>
+						<div class="px-3 py-3">
+							{@render foldedBody(topicFolded, topic.summary)}
+						</div>
+					</div>
+				{:else}
+					<div class="flex items-center gap-2 px-1 {mobileTab === 'topic' ? '' : 'hidden'} md:flex">
+						<p class="text-xs text-faint">No topic memory yet — it builds as conversations get folded.</p>
+						<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "topic", label: "Topic memory", summary: "", meta: "", id: topic.id })}>
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+						</button>
+					</div>
+				{/if}
+			{:else}
+				<p class="px-1 text-xs text-faint {mobileTab === 'topic' ? '' : 'hidden'} md:block">No topic selected — memory appears once a topic is active.</p>
+			{/if}
+			{#if editing === "category"}
+				<div class="flex flex-col rounded-xl border border-line bg-panel p-3 {mobileTab === 'category' ? 'flex' : 'hidden'} md:flex">
+					<textarea
+						bind:value={editText}
+						rows="8"
+						class="w-full resize-y rounded-lg border border-accent/60 bg-bg p-3 text-sm leading-relaxed focus:border-accent focus:outline-none md:text-base"
+					></textarea>
+					<div class="mt-2 flex justify-end gap-2">
+						<button class="rounded-lg border border-line px-3 py-1.5 text-xs text-dim hover:text-ink" onclick={() => (editing = null)}>Cancel</button>
+						<button class="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/85" onclick={() => void saveEdit({ type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id })}>Save</button>
+					</div>
 				</div>
-			</div>
+			{:else if categoryFolded}
+				<div class="flex flex-col rounded-xl border border-line bg-panel {mobileTab === 'category' ? 'flex' : 'hidden'} md:flex">
+					<div class="flex items-center gap-2 border-b border-line px-3 py-2">
+						<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Category overview</h3>
+						<span class="text-[10px] text-faint">{relativeTime(category.updated_at_timestamp)}</span>
+						<div class="flex-1"></div>
+						<button class="text-faint transition-colors hover:text-ink" title="Revise" onclick={() => startEdit({ type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id })}>
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+						</button>
+						<button class="text-faint transition-colors hover:text-danger" title="Forget" onclick={() => (forgetType = "category")}>
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+						</button>
+					</div>
+					<div class="px-3 py-3">
+						{@render foldedBody(categoryFolded, category.summary)}
+					</div>
+				</div>
+			{:else}
+				<div class="flex items-center gap-2 px-1 {mobileTab === 'category' ? '' : 'hidden'} md:flex">
+					<p class="text-xs text-faint">No category overview yet — it builds from topic memories.</p>
+					<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "category", label: "Category overview", summary: "", meta: "", id: category.id })}>
+						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+					</button>
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>

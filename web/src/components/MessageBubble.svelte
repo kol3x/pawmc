@@ -51,7 +51,7 @@ const html = $derived(renderMarkdown(msg.content))
 				<textarea
 					bind:value={editText}
 					rows="4"
-					class="w-full resize-y bg-transparent text-base text-ink focus:outline-none"
+					class="w-full resize-y bg-transparent text-sm text-ink focus:outline-none md:text-base"
 				></textarea>
 				<div class="mt-1.5 flex justify-end gap-2 text-xs">
 					<button class="rounded-md px-2 py-1 text-dim hover:text-ink" onclick={() => (editing = false)}>Cancel</button>
@@ -60,7 +60,7 @@ const html = $derived(renderMarkdown(msg.content))
 			</div>
 		{:else}
 			<div
-				class="rounded-2xl px-3.5 py-2.5 text-base leading-relaxed {msg.role === 'user'
+				class="rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed md:text-base {msg.role === 'user'
 					? 'rounded-br-md bg-accent text-white'
 					: 'rounded-bl-md bg-panel border border-line text-ink'}"
 			>
