@@ -1,10 +1,5 @@
 export type Freshness = "high" | "mid" | "low" | "none"
 
-/** Sidebar freshness filter levels mapped to age cutoffs in seconds (0 hides nothing). */
-export const FRESH_CUTOFFS = [86400, 86400 * 7, 86400 * 30, Infinity] as const
-
-export const FRESH_FILTER_LABELS = ["Today", "Week", "Month", "All"] as const
-
 /**
  * Buckets a summary timestamp into a freshness level for color-coding.
  */

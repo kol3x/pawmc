@@ -2,16 +2,16 @@
 
 @theme {
 	--color-bg: oklch(0.145 0.004 286);
-	--color-panel: oklch(0.185 0.005 286);
-	--color-panel-2: oklch(0.225 0.006 286);
-	--color-line: oklch(0.29 0.008 286);
-	--color-ink: oklch(0.94 0.004 286);
-	--color-dim: oklch(0.66 0.008 286);
-	--color-faint: oklch(0.46 0.008 286);
-	--color-accent: oklch(0.62 0.18 292);
-	--color-accent-soft: oklch(0.62 0.18 292 / 0.14);
-	--color-danger: oklch(0.63 0.18 25);
-	--color-danger-soft: oklch(0.63 0.18 25 / 0.14);
+	--color-panel: oklch(0.205 0.006 286);
+	--color-panel-2: oklch(0.26 0.007 286);
+	--color-line: oklch(0.35 0.01 286);
+	--color-ink: oklch(0.97 0.003 286);
+	--color-dim: oklch(0.76 0.01 286);
+	--color-faint: oklch(0.585 0.01 286);
+	--color-accent: oklch(0.64 0.19 292);
+	--color-accent-soft: oklch(0.64 0.19 292 / 0.16);
+	--color-danger: oklch(0.64 0.19 25);
+	--color-danger-soft: oklch(0.64 0.19 25 / 0.16);
 	--color-fresh: oklch(0.75 0.16 155);
 	--color-aging: oklch(0.78 0.14 85);
 	--color-stale: oklch(0.7 0.13 55);

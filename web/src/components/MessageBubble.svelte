@@ -5,16 +5,20 @@ import Menu from "./ui/Menu.svelte"
 
 interface Props {
 	msg: StreamMessage
-	editable: boolean
+	/** True when the message may be edited (user messages in unsummarized conversations only). */
+	canEdit: boolean
+	/** True when the message may be deleted (any role in unsummarized conversations). */
+	canMutate: boolean
 	onedit: (msg: StreamMessage, content: string) => void
 	ondelete: (msg: StreamMessage) => void
 }
 
 /**
  * One message in the continuous stream: avatar, bubble (markdown for assistant), and
- * edit/delete actions for messages in conversations that are not yet summarized.
+ * actions — editing is limited to the user's own messages; deletion works on both roles
+ * while the conversation is not yet summarized.
  */
-let { msg, editable, onedit, ondelete }: Props = $props()
+let { msg, canEdit, canMutate, onedit, ondelete }: Props = $props()
 
 let editing = $state(false)
 let editText = $state("")
@@ -47,7 +51,7 @@ const html = $derived(renderMarkdown(msg.content))
 				<textarea
 					bind:value={editText}
 					rows="4"
-					class="w-full resize-y bg-transparent text-sm text-ink focus:outline-none"
+					class="w-full resize-y bg-transparent text-base text-ink focus:outline-none"
 				></textarea>
 				<div class="mt-1.5 flex justify-end gap-2 text-xs">
 					<button class="rounded-md px-2 py-1 text-dim hover:text-ink" onclick={() => (editing = false)}>Cancel</button>
@@ -56,7 +60,7 @@ const html = $derived(renderMarkdown(msg.content))
 			</div>
 		{:else}
 			<div
-				class="rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed {msg.role === 'user'
+				class="rounded-2xl px-3.5 py-2.5 text-base leading-relaxed {msg.role === 'user'
 					? 'rounded-br-md bg-accent text-white'
 					: 'rounded-bl-md bg-panel border border-line text-ink'}"
 			>
@@ -70,9 +74,9 @@ const html = $derived(renderMarkdown(msg.content))
 				{/if}
 			</div>
 		{/if}
-		{#if editable && !editing}
+		{#if canMutate && !editing}
 			<Menu label="Message actions" items={[
-				{ label: "Edit", onpick: startEdit },
+				...(canEdit ? [{ label: "Edit", onpick: startEdit }] : []),
 				{ label: "Delete", danger: true, onpick: () => ondelete(msg) },
 			]}>
 				<svg class="opacity-30 transition-opacity group-hover/msg:opacity-100" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>

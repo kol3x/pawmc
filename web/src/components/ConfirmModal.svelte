@@ -37,8 +37,8 @@ let {
 				? 'bg-danger hover:bg-danger/85'
 				: 'bg-accent hover:bg-accent/85'}"
 			onclick={() => {
-				onclose()
 				onconfirm()
+				onclose()
 			}}>{confirmLabel}</button
 		>
 	</div>

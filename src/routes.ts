@@ -115,6 +115,19 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
 
     /**
+     * GET /topic-stream - Returns all conversations of one category/topic pair with their messages in a single response.
+     */
+    if (request.method === "GET" && url.pathname === "/topic-stream") {
+      const category = url.searchParams.get("category") || ""
+      const topic = url.searchParams.get("topic") || ""
+      if (!category.trim() || !topic.trim())
+        return Response.json({ error: "category and topic query parameters are required" }, { status: 400 })
+      console.log(`[INFO][${stage}] Topic stream: category=${category}, topic=${topic}`)
+      const result = await stub.topicConversations(category, topic)
+      return Response.json(result)
+    }
+
+    /**
      * GET /conversation - Retrieves a single conversation by ID.
      */
     if (request.method === "GET" && url.pathname === "/conversation") {

@@ -1,12 +1,14 @@
 import type { ApiErrorBody } from "./api-types"
 
-/** Error thrown by api() for non-2xx responses, carrying the HTTP status. */
+/** Error thrown by api() for non-2xx responses, carrying the HTTP status and the parsed body (e.g. the 422 topic-needed payload). */
 export class ApiError extends Error {
 	status: number
+	body: unknown
 
-	constructor(status: number, message: string) {
+	constructor(status: number, message: string, body: unknown = null) {
 		super(message)
 		this.status = status
+		this.body = body
 	}
 }
 
@@ -34,7 +36,7 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
 	if (!res.ok) {
 		if (res.status === 401) markUnauthorized()
 		const message = (data as ApiErrorBody | null)?.error || `Request failed (${res.status})`
-		throw new ApiError(res.status, message)
+		throw new ApiError(res.status, message, data)
 	}
 	return data as T
 }

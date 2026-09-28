@@ -52,7 +52,6 @@ function save() {
 			<span class="text-xs font-medium text-dim">Keybinds</span>
 			<ul class="flex flex-col gap-1 text-xs text-faint">
 				<li><span class="text-ink">Enter</span> send · <span class="text-ink">Shift+Enter</span> new line</li>
-				<li><span class="text-ink">Ctrl/Cmd+Enter</span> send in fullscreen composer</li>
 				<li><span class="text-ink">/</span> focus composer · <span class="text-ink">Esc</span> close overlays</li>
 			</ul>
 		</div>

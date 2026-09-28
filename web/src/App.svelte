@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { auth, initAuth } from "./lib/auth.svelte"
-	import { initSettings } from "./lib/settings.svelte"
 	import { app } from "./lib/appState.svelte"
 	import { api, ApiError } from "./api"
 	import { pushToast } from "./lib/toasts.svelte"
 	import type { CategorySummary, TopicSummary } from "./api-types"
-	import Sidebar from "./components/Sidebar.svelte"
+	import CategoryTabs from "./components/CategoryTabs.svelte"
+	import TopicChips from "./components/TopicChips.svelte"
 	import ChatPane from "./components/ChatPane.svelte"
-	import ContextView from "./components/ContextView.svelte"
+	import MemoryBar from "./components/MemoryBar.svelte"
 	import AuthOverlay from "./components/AuthOverlay.svelte"
 	import SettingsModal from "./components/SettingsModal.svelte"
 	import PromptModal from "./components/PromptModal.svelte"
@@ -16,11 +16,20 @@
 	import IconButton from "./components/ui/IconButton.svelte"
 
 	initAuth()
-	initSettings()
 
-	let drawerOpen = $state(false)
 	let settingsOpen = $state(false)
+	let memoryOpen = $state(false)
 	let composerRef = $state<ChatPane | null>(null)
+
+	// Escape closes the mobile memory drawer.
+	$effect(() => {
+		if (!memoryOpen) return
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") memoryOpen = false
+		}
+		window.addEventListener("keydown", onKey)
+		return () => window.removeEventListener("keydown", onKey)
+	})
 
 	let promptConfig = $state<null | {
 		title: string
@@ -73,7 +82,7 @@
 		window.addEventListener("pageshow", onFocus)
 		return () => {
 			document.removeEventListener("visibilitychange", onVisible)
-			window.removeEventListener("focus", onFocus)
+			document.removeEventListener("focus", onFocus)
 			window.removeEventListener("pageshow", onFocus)
 		}
 	})
@@ -170,71 +179,51 @@
 			pushToast(`${action[0].toUpperCase()}${action.slice(1)} needs a backend update (v2)`, "error")
 		else pushToast(`${action} failed — ${err instanceof Error ? err.message : String(err)}`, "error")
 	}
-
-	const breadcrumb = $derived.by(() => {
-		const cat = app.selectedCategory
-		if (app.newTopicMode) return cat ? `${cat.name} / new topic` : "new conversation"
-		const topic = app.selectedTopic
-		if (cat && topic) return `${cat.name} / ${topic.name}`
-		return cat?.name ?? ""
-	})
 </script>
 
 {#if showAuth}
 	<AuthOverlay />
 {:else}
-	<div class="flex h-dvh overflow-hidden">
-		<!-- mobile drawer backdrop -->
-		{#if drawerOpen}
-			<button
-				class="fixed inset-0 z-30 cursor-default appearance-none bg-black/50 lg:hidden"
-				aria-label="Close menu"
-				tabindex="-1"
-				onclick={() => (drawerOpen = false)}
-			></button>
-		{/if}
-		<div
-			class="fixed inset-y-0 left-0 z-40 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 {drawerOpen
-				? 'translate-x-0'
-				: '-translate-x-full'}"
-		>
-			<Sidebar
-				onclose={() => (drawerOpen = false)}
-				onrenamecategory={onRenameCategory}
-				ondeletecategory={onDeleteCategory}
-				onrenametopic={onRenameTopic}
-				ondeletetopic={onDeleteTopic}
-				onsettings={() => (settingsOpen = true)}
-			/>
-		</div>
-
-		<div class="flex min-w-0 flex-1 flex-col">
-			<header class="flex items-center gap-2 border-b border-line bg-panel/60 px-3 py-2.5">
-				<IconButton title="Menu" onclick={() => (drawerOpen = true)} class="lg:hidden">
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
-				</IconButton>
-				<h1 class="min-w-0 flex-1 truncate text-sm font-medium">{breadcrumb}</h1>
-				<div class="flex overflow-hidden rounded-lg border border-line text-xs">
-					<button
-						class="px-3 py-1.5 font-medium transition-colors {app.view === 'chat'
-							? 'bg-accent-soft text-accent'
-							: 'text-dim hover:text-ink'}"
-						onclick={() => (app.view = "chat")}
-					>Chat</button>
-					<button
-						class="px-3 py-1.5 font-medium transition-colors {app.view === 'context'
-							? 'bg-accent-soft text-accent'
-							: 'text-dim hover:text-ink'}"
-						onclick={() => (app.view = "context")}
-					>Context</button>
+	<div class="flex h-dvh flex-col overflow-hidden">
+		<header class="border-b border-line bg-panel/60 pt-2">
+			<div class="flex items-center gap-1">
+				<h1 class="shrink-0 pl-4 pr-1 text-sm font-semibold tracking-tight">pawmc</h1>
+				<div class="min-w-0 flex-1">
+					<CategoryTabs
+						onrenamecategory={onRenameCategory}
+						ondeletecategory={onDeleteCategory}
+					/>
 				</div>
-			</header>
-
-			{#if app.view === "chat"}
-				<ChatPane bind:this={composerRef} />
-			{:else}
-				<ContextView />
+			<div class="flex shrink-0 items-center gap-0.5 pr-2">
+				<IconButton title="Memory" class="md:hidden" onclick={() => (memoryOpen = true)}>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+				</IconButton>
+				<IconButton title="Settings" onclick={() => (settingsOpen = true)}>
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+					</IconButton>
+				</div>
+			</div>
+			{#if app.selectedCategory}
+				<div class="min-w-0">
+					<TopicChips onrenametopic={onRenameTopic} ondeletetopic={onDeleteTopic} />
+				</div>
 			{/if}
+		</header>
+
+		<ChatPane bind:this={composerRef} />
+	</div>
+{/if}
+
+{#if memoryOpen}
+	<div class="fixed inset-0 z-50 flex md:hidden">
+		<button
+			class="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+			aria-label="Close memory"
+			tabindex="-1"
+			onclick={() => (memoryOpen = false)}
+		></button>
+		<div class="relative flex w-80 max-w-[85vw] flex-col border-r border-line bg-bg shadow-2xl">
+			<MemoryBar onclose={() => (memoryOpen = false)} />
 		</div>
 	</div>
 {/if}

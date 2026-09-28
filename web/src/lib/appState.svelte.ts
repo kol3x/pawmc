@@ -4,8 +4,11 @@ import type {
 	ChatResponse,
 	ConversationDetail,
 	ConversationListEntry,
+	TopicCandidate,
+	TopicNeededResponse,
+	TopicStreamEntry,
 } from "../api-types"
-import { api } from "../api"
+import { api, ApiError } from "../api"
 import { pushToast } from "./toasts.svelte"
 
 /** A message in the merged continuous stream, tagged with its owning conversation. */
@@ -41,6 +44,25 @@ interface PendingChat {
 	recovered: boolean
 }
 
+/** A send interrupted by the autotopic confidence gate (422): nothing was stored; the draft waits for a topic choice. */
+export interface TopicNeededState {
+	/** Message text to resend once a topic is picked. */
+	draft: string
+	noteMode: boolean
+	/** Category the send targeted. */
+	categoryName: string
+	candidates: TopicCandidate[]
+}
+
+/**
+ * Narrows an ApiError body into the 422 topic-needed payload.
+ */
+function isTopicNeeded(body: unknown): body is TopicNeededResponse {
+	if (typeof body !== "object" || body === null) return false
+	const candidate = body as { topicNeeded?: unknown; candidates?: unknown }
+	return candidate.topicNeeded === true && Array.isArray(candidate.candidates)
+}
+
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 /** Global UI state: category/topic selection, continuous conversation stream, send + recovery. */
@@ -48,16 +70,19 @@ class AppState {
 	categories = $state<CategorySummary[] | null>(null)
 	categoryId = $state<number | null>(null)
 	topicId = $state<number | null>(null)
-	/** Optional topic name typed before sending (creates a topic on the fly). */
-	draftTopicName = $state("")
-	/** True while the composer targets a brand-new topic (from the New topic button or empty category). */
-	newTopicMode = $state(false)
-	view = $state<"chat" | "context">("chat")
+	/** Staged name for a not-yet-created category (ghost tab); it becomes real on the first send. */
+	pendingCategoryName = $state("")
+	/** Set when a send was interrupted by the autotopic gate; the composer area shows a candidate picker. */
+	topicNeeded = $state<TopicNeededState | null>(null)
 	stream = $state<ConversationGroup[]>([])
 	loadingStream = $state(false)
 	sending = $state(false)
 	pendingChat = $state<PendingChat | null>(null)
+	/** In-flight post-send categories/stream refresh; next sends serialize behind it. */
+	refreshPromise: Promise<void> | null = null
 	lastCategoriesLoad = 0
+	/** Bumped on every user-driven selection change; background refreshes abort when it moves so they cannot override navigation. */
+	selectionEpoch = 0
 
 	selectedCategory = $derived.by(
 		() => this.categories?.find((c) => c.id === this.categoryId) ?? null,
@@ -77,49 +102,64 @@ class AppState {
 	}
 
 	/**
-	 * Keeps the current selection if it still exists, otherwise falls back to the first category/topic.
+	 * Keeps the current selection only when it still exists; otherwise clears it so the UI falls back to the empty new-conversation state instead of jumping to an arbitrary topic.
 	 */
 	retainSelection(): void {
 		const cats = this.categories ?? []
-		const cat = cats.find((c) => c.id === this.categoryId) ?? cats[0] ?? null
-		this.categoryId = cat?.id ?? null
-		const topic = cat?.topics.find((t) => t.id === this.topicId) ?? cat?.topics[0] ?? null
+		this.categoryId = cats.find((c) => c.id === this.categoryId)?.id ?? null
+		const topic = this.selectedCategory?.topics.find((t) => t.id === this.topicId)
 		this.topicId = topic?.id ?? null
 	}
 
 	/**
-	 * Selects a category; auto-selects its first topic, leaving the composer in new-topic mode when it has none.
+	 * Selects a category and shows the empty new-conversation composer; topics open through explicit selection only. Cancels a staged ghost category.
 	 */
 	selectCategory(categoryId: number): void {
 		if (categoryId === this.categoryId) return
+		this.selectionEpoch++
 		this.categoryId = categoryId
-		const cat = this.categories?.find((c) => c.id === categoryId)
-		this.topicId = cat?.topics[0]?.id ?? null
-		this.draftTopicName = ""
-		this.newTopicMode = cat ? cat.topics.length === 0 : false
-		this.view = "chat"
-		void this.loadStream()
+		this.topicId = null
+		this.pendingCategoryName = ""
+		this.stream = []
 	}
 
 	/**
 	 * Selects a topic within a category and (re)loads its stream.
 	 */
 	selectTopic(categoryId: number, topicId: number): void {
+		this.selectionEpoch++
 		this.categoryId = categoryId
 		this.topicId = topicId
-		this.draftTopicName = ""
-		this.newTopicMode = false
-		this.view = "chat"
+		this.pendingCategoryName = ""
+		this.stream = []
 		void this.loadStream()
 	}
 
 	/**
-	 * Enters new-topic mode: the composer gets an empty topic name field; sending creates the topic (or autogens one when left blank).
+	 * Clears the topic selection so the next send autogens a fresh topic; the category stays selected.
 	 */
-	startNewTopic(): void {
-		this.newTopicMode = true
-		this.draftTopicName = ""
-		this.view = "chat"
+	deselectTopic(): void {
+		this.selectionEpoch++
+		this.topicId = null
+		this.stream = []
+	}
+
+	/**
+	 * Stages a ghost category tab: the name is not saved server-side until the first message is sent.
+	 */
+	stageNewCategory(name: string): void {
+		this.selectionEpoch++
+		this.pendingCategoryName = name.trim()
+		this.categoryId = null
+		this.topicId = null
+		this.stream = []
+	}
+
+	/**
+	 * Discards the staged ghost category.
+	 */
+	cancelPendingCategory(): void {
+		this.pendingCategoryName = ""
 	}
 
 	/**
@@ -129,33 +169,31 @@ class AppState {
 		for (const cat of this.categories ?? []) {
 			if (cat.topics.some((t) => t.id === topicId)) {
 				this.selectTopic(cat.id, topicId)
-				this.newTopicMode = false
 				return
 			}
 		}
 	}
 
 	/**
-	 * Restores category/topic selection from URL query params (?category=&topic=), matching by name.
+	 * Restores category/topic selection from URL query params (?category=&topic=), matching by name; the topic stays empty when the URL names only a category.
 	 */
 	restoreFromUrl(): void {
 		const params = new URLSearchParams(window.location.search)
 		const catName = params.get("category")
 		const topicName = params.get("topic")
-		if (!catName) return
-		const cat = this.categories?.find((c) => c.name === catName)
-		if (!cat) return
-		this.categoryId = cat.id
-		const topic = topicName
-			? cat.topics.find((t) => t.name === topicName)
-			: (cat.topics[0] ?? null)
-		this.topicId = topic?.id ?? null
+	if (!catName) return
+	const cat = this.categories?.find((c) => c.name === catName)
+	if (!cat) return
+	this.selectionEpoch++
+	this.categoryId = cat.id
+		this.topicId = topicName ? (cat.topics.find((t) => t.name === topicName)?.id ?? null) : null
 	}
 
 	/**
-	 * Loads the topic's conversations and merges them into a continuous ascending message stream.
+	 * Loads the topic's conversations in one /topic-stream request and merges them into a continuous ascending message stream.
 	 */
 	async loadStream(): Promise<void> {
+		const epoch = this.selectionEpoch
 		const cat = this.selectedCategory
 		const topic = this.selectedTopic
 		if (!cat || !topic) {
@@ -165,32 +203,22 @@ class AppState {
 		this.loadingStream = true
 		try {
 			const query = `category=${encodeURIComponent(cat.name)}&topic=${encodeURIComponent(topic.name)}`
-			const list = await api<ConversationListEntry[]>("GET", `/conversations?${query}`)
-			const ascending = [...list].sort((a, b) => a.created_at - b.created_at)
-			const details = await Promise.all(
-				ascending.map((entry) =>
-					api<ConversationDetail>("GET", `/conversation?id=${entry.id}`).catch(
-						() => null,
-					),
-				),
-			)
-			this.stream = ascending
-				.map((entry, i) => {
-					const detail = details[i]
-					return {
-						id: entry.id,
+			const entries = await api<TopicStreamEntry[]>("GET", `/topic-stream?${query}`)
+			if (this.selectionEpoch !== epoch) return
+			this.stream = entries
+				.map((entry) => ({
+					id: entry.id,
+					createdAt: entry.created_at,
+					summarized:
+						topic.updated_at_timestamp !== 0 &&
+						entry.created_at < topic.updated_at_timestamp,
+					messages: entry.messages.map((m: ChatMessage, index: number) => ({
+						...m,
+						conversationId: entry.id,
+						index,
 						createdAt: entry.created_at,
-						summarized:
-							topic.updated_at_timestamp !== 0 &&
-							entry.created_at < topic.updated_at_timestamp,
-						messages: (detail?.messages ?? []).map((m, index) => ({
-							...m,
-							conversationId: entry.id,
-							index,
-							createdAt: entry.created_at,
-						})),
-					}
-				})
+					})),
+				}))
 				.filter((g) => g.messages.length > 0)
 		} catch (err) {
 			pushToast(`Couldn't load the conversation stream — ${errorMessage(err)}`, "error")
@@ -200,19 +228,30 @@ class AppState {
 	}
 
 	/**
-	 * Sends a message: appends an optimistic user bubble, posts to /chat, then refreshes
-	 * categories (topic may be created) and the stream. Returns true on success; on failure
-	 * the optimistic bubble is removed and the caller should restore the draft.
+	 * Sends a message: appends an optimistic user bubble, posts to /chat, renders the
+	 * assistant reply immediately from the response, then refreshes categories and the
+	 * stream in the background. The category resolves to an explicit override, else the
+	 * staged ghost tab name, else the selected tab; the topic resolves to an explicit
+	 * override (autotopic picker), else the selected topic, else autogen. On a 422
+	 * autotopic gate response nothing is stored and the draft waits in a candidate picker
+	 * (topicNeeded). Returns true when the send was accepted (or parked for topic
+	 * picking); on failure the optimistic bubble is removed and the caller should restore
+	 * the draft.
+	 *
+	 * Arrow field on purpose: Svelte 5 compiles bare method references passed as props
+	 * (onsend={app.sendMessage}) into calls on the props object, so a regular method
+	 * would lose `this` and see an empty state.
 	 */
-	async sendMessage(text: string, noteMode: boolean, categoryName?: string): Promise<boolean> {
-		const catName = categoryName || this.selectedCategory?.name
+	sendMessage = async (text: string, noteMode: boolean, categoryName?: string, topicOverride?: string): Promise<boolean> => {
+		if (this.refreshPromise) await this.refreshPromise
+		this.topicNeeded = null
+
+		const catName = categoryName || this.pendingCategoryName || this.selectedCategory?.name
 		if (!catName) {
 			pushToast("Pick a category first", "error")
 			return false
 		}
-		const topicName = this.newTopicMode
-			? this.draftTopicName.trim()
-			: (this.draftTopicName.trim() || this.selectedTopic?.name || "")
+		const topicName = topicOverride?.trim() || this.selectedTopic?.name || ""
 
 		const payload: Record<string, unknown> = { category: catName, message: text, noteMode }
 		if (topicName) payload.topic = topicName
@@ -232,6 +271,7 @@ class AppState {
 		]
 
 		this.sending = true
+		const sentEpoch = this.selectionEpoch
 		const promise = api<ChatResponse>("POST", "/chat", payload)
 		const pc: PendingChat = {
 			promise,
@@ -245,13 +285,36 @@ class AppState {
 		this.pendingChat = pc
 		try {
 			const res = await promise
-			await this.loadCategories()
-			if (res.topicId != null && res.topicId !== this.topicId) this.selectTopicById(res.topicId)
-			else if (this.newTopicMode && res.topicId == null) this.retainSelection()
-			await this.loadStream()
-			this.newTopicMode = false
+
+			// Render the reply immediately from the response; server truth follows in the background.
+			group.id = res.conversationId
+			group.messages = [
+				...group.messages.map((m) =>
+					m.pending ? { ...m, pending: false, conversationId: res.conversationId } : m,
+				),
+				{
+					role: "assistant",
+					content: res.response,
+					conversationId: res.conversationId,
+					index: group.messages.length,
+					createdAt: group.createdAt,
+				},
+			]
+
+			const refresh = this.refreshAfterChat(res, pc.category, sentEpoch)
+			this.refreshPromise = refresh
+			void refresh.finally(() => {
+				if (this.refreshPromise === refresh) this.refreshPromise = null
+			})
 			return true
 		} catch (err) {
+			if (err instanceof ApiError && err.status === 422 && isTopicNeeded(err.body)) {
+				group.messages = group.messages.filter((m) => !m.pending)
+				if (group.id === -1 && group.messages.length === 0)
+					this.stream = this.stream.filter((g) => g !== group)
+				this.topicNeeded = { draft: text, noteMode, categoryName: catName, candidates: err.body.candidates }
+				return true
+			}
 			group.messages = group.messages.filter((m) => !m.pending)
 			if (group.id === -1 && group.messages.length === 0)
 				this.stream = this.stream.filter((g) => g !== group)
@@ -261,6 +324,58 @@ class AppState {
 			this.sending = false
 			if (this.pendingChat === pc) this.pendingChat = null
 		}
+	}
+
+	/**
+	 * Post-send refresh: categories (the topic or ghost category may be new), then selection
+	 * + stream reconciliation — the reply's topic is followed when it differs, a staged ghost
+	 * category is selected once it exists, and otherwise the current topic's stream reloads.
+	 * sentEpoch is the selection epoch captured when the send started; when the user navigated
+	 * while the request was in flight, the refresh only updates data and never moves selection.
+	 */
+	async refreshAfterChat(res: ChatResponse, sentCategory: string, sentEpoch: number): Promise<void> {
+		try {
+			await this.loadCategories()
+			if (this.selectionEpoch !== sentEpoch) return
+			if (res.topicId != null && res.topicId !== this.topicId) {
+				this.selectTopicById(res.topicId)
+			} else if (this.pendingCategoryName && this.pendingCategoryName === sentCategory) {
+				const cat = this.categories?.find((c) => c.name === sentCategory)
+				if (cat && cat.id !== this.categoryId) this.selectCategory(cat.id)
+				else await this.loadStream()
+			} else {
+				await this.loadStream()
+			}
+			if (this.pendingCategoryName === sentCategory) this.pendingCategoryName = ""
+		} catch (err) {
+			pushToast(`Couldn't refresh — ${errorMessage(err)}`, "error")
+		}
+	}
+
+	/**
+	 * Resends a message parked by the autotopic gate under the picked topic name, targeting the parked category.
+	 */
+	async pickTopicAndResend(topicName: string): Promise<void> {
+		const parked = this.topicNeeded
+		if (!parked) return
+		this.topicNeeded = null
+		const cat = this.categories?.find((c) => c.name === parked.categoryName)
+		if (cat && cat.id !== this.categoryId) {
+			this.selectionEpoch++
+			this.categoryId = cat.id
+			this.topicId = null
+			this.stream = []
+		}
+		await this.sendMessage(parked.draft, parked.noteMode, parked.categoryName, topicName)
+	}
+
+	/**
+	 * Discards a parked autotopic pick, handing the draft back to the caller (e.g. the composer).
+	 */
+	cancelTopicNeeded(): string | null {
+		const parked = this.topicNeeded
+		this.topicNeeded = null
+		return parked?.draft ?? null
 	}
 
 	/**
@@ -281,9 +396,10 @@ class AppState {
 			return
 		}
 		if (pc.recovered) return
+		const epoch = this.selectionEpoch
 		for (let attempt = 0; attempt < 8; attempt++) {
 			if (this.pendingChat !== pc) return
-			const found = await this.probeReply(pc)
+			const found = await this.probeReply(pc, epoch)
 			if (found) {
 				pc.recovered = true
 				this.pendingChat = null
@@ -298,8 +414,9 @@ class AppState {
 	/**
 	 * Checks whether the reply for a pending chat already exists on the server; if so, refreshes selection + stream and returns true.
 	 * The reply may land in an existing fresh conversation (topic continuation), so the newest few conversations are probed by content.
+	 * When the user navigated since recovery started (epoch moved), the reply is acknowledged without touching their selection.
 	 */
-	async probeReply(pc: PendingChat): Promise<boolean> {
+	async probeReply(pc: PendingChat, epoch: number): Promise<boolean> {
 		try {
 			let query = `category=${encodeURIComponent(pc.category)}`
 			if (pc.topic) query += `&topic=${encodeURIComponent(pc.topic)}`
@@ -314,6 +431,7 @@ class AppState {
 				const ours = messages[lastUserIdx]?.content?.trim() === pc.draft.trim()
 				const answered = messages.at(-1)?.role === "assistant"
 				if (!ours || !answered) continue
+				if (this.selectionEpoch !== epoch) return true
 				await this.loadCategories()
 				if (!pc.topic) {
 					// Autogen may have picked any topic in the category; follow the reply.

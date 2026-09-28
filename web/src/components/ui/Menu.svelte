@@ -15,10 +15,25 @@ interface Props {
 
 /**
  * Click-to-open dropdown menu (kebab) with an invisible backdrop that closes it.
+ * The panel is fixed-positioned from the trigger's bounding rect so ancestor
+ * overflow containers (tab rows, topic chips, chat scroller) cannot clip or bury it.
  */
 let { label = "Menu", items, children }: Props = $props()
 
 let open = $state(false)
+let triggerEl = $state<HTMLButtonElement | null>(null)
+let panelStyle = $state("")
+
+function placePanel() {
+	const rect = triggerEl?.getBoundingClientRect()
+	if (!rect) return
+	panelStyle = `top: ${rect.bottom + 4}px; right: ${Math.max(0, window.innerWidth - rect.right)}px;`
+}
+
+function toggle() {
+	if (!open) placePanel()
+	open = !open
+}
 
 function pick(item: MenuItem) {
 	open = false
@@ -26,7 +41,7 @@ function pick(item: MenuItem) {
 }
 
 </script>
-<div class="relative">
+<div>
 	{#if open}
 		<!-- invisible full-viewport click-catcher so any outside click closes the menu -->
 		<button
@@ -37,15 +52,16 @@ function pick(item: MenuItem) {
 		></button>
 	{/if}
 	<button
+		bind:this={triggerEl}
 		title={label}
 		aria-label={label}
-		onclick={() => (open = !open)}
+		onclick={toggle}
 		class="flex h-7 w-7 items-center justify-center rounded-md text-faint transition-colors hover:bg-panel-2 hover:text-ink"
 	>
 		{@render children?.()}
 	</button>
 	{#if open}
-		<div class="absolute right-0 top-8 z-50 min-w-36 overflow-hidden rounded-lg border border-line bg-panel py-1 shadow-xl">
+		<div style={panelStyle} class="fixed z-50 min-w-36 overflow-hidden rounded-lg border border-line bg-panel py-1 shadow-xl">
 			{#each items as item (item.label)}
 				<button
 					onclick={() => pick(item)}

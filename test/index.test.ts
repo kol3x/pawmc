@@ -9,6 +9,7 @@ import worker, {
   type Env,
   type TopicNeededResult,
   type TopicRow,
+  type TopicStreamEntry,
 } from "../src/index"
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -264,6 +265,32 @@ it("lists conversations filtered by category", async () => {
   const listed = await fetchJson<ConversationListEntry[]>("/conversations?category=qa-list")
   expect(listed.body.length).toBeGreaterThan(0)
   expect(listed.body.every((c) => c.category === "qa-list")).toBe(true)
+})
+
+it("returns the full topic stream in one request", async () => {
+  stubOpenRouter("ok")
+  const first = await chat("qa-stream", "t1", "one")
+  await chat("qa-stream", "t1", "two")
+  const otherChat = await chat("qa-stream", "t2", "other")
+
+  const stream = await fetchJson<TopicStreamEntry[]>("/topic-stream?category=qa-stream&topic=t1")
+  expect(stream.status).toBe(200)
+  expect(stream.body).toHaveLength(1)
+  expect(stream.body[0]?.id).toBe(first.conversationId)
+  expect(stream.body[0]?.created_at).toBeGreaterThan(0)
+  expect(stream.body[0]?.messages.map((m) => m.content)).toEqual(["one", "ok", "two", "ok"])
+
+  const other = await fetchJson<TopicStreamEntry[]>("/topic-stream?category=qa-stream&topic=t2")
+  expect(other.body).toHaveLength(1)
+  expect(other.body[0]?.id).toBe(otherChat.conversationId)
+  expect(other.body[0]?.messages.map((m) => m.content)).toEqual(["other", "ok"])
+})
+
+it("returns an empty topic stream for unknown names and 400 without params", async () => {
+  expect((await fetchJson<TopicStreamEntry[]>("/topic-stream?category=qa-nope&topic=t1")).body).toEqual([])
+  expect((await fetchJson<TopicStreamEntry[]>("/topic-stream?category=qa-stream&topic=missing")).body).toEqual([])
+  expect((await fetchJson("/topic-stream?category=qa-stream")).status).toBe(400)
+  expect((await fetchJson("/topic-stream?topic=t1")).status).toBe(400)
 })
 
 it("returns 404 for missing conversations", async () => {

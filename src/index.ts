@@ -68,6 +68,15 @@ export interface ConversationListEntry {
 }
 
 /**
+ * One conversation in a topic's full stream: the same shape as ConversationDetail plus the creation timestamp the frontend uses to order the stream and detect summarized conversations.
+ */
+export interface TopicStreamEntry {
+  id: number
+  created_at: number
+  messages: AiConversationEntry[]
+}
+
+/**
  * Returned by chat() when topic autogen confidence is too low: nothing was stored and the caller should offer the candidates as one-click choices.
  */
 export interface TopicNeededResult {
@@ -688,6 +697,43 @@ export class AssistantDurableObject extends DurableObject<Env> {
     })
     console.log(`[INFO][${stage}] Listed ${result.length} conversations`)
     return result
+  }
+
+  /**
+   * Returns all conversations of one category/topic pair with their messages, ascending by creation time — a single-request replacement for the frontend's list + per-conversation detail fetches. Unknown category/topic names return an empty array.
+   */
+  async topicConversations(category: string, topic: string): Promise<TopicStreamEntry[]> {
+    const stage = "topicConversations"
+    try {
+      const rows = [
+        ...this.#db
+          .exec(
+            `SELECT c.id, c.created_at_timestamp, c.messages
+             FROM conversations c
+             JOIN topics t ON t.id = c.topic_id
+             JOIN categories cat ON cat.id = t.category_id
+             WHERE cat.name = ? AND t.name = ?
+             ORDER BY c.created_at_timestamp ASC`,
+            category.trim(),
+            topic.trim(),
+          )
+          .toArray(),
+      ]
+      const result = rows.map((row) => {
+        let messages: AiConversationEntry[] = []
+        try {
+          messages = AiConversationEntry.array().parse(JSON.parse(String(row.messages || "[]")))
+        } catch (err) {
+          console.error(`[ERROR][${stage}] Failed to parse messages for conversation=${row.id}: ${errorMessage(err)}`)
+        }
+        return { id: Number(row.id), created_at: Number(row.created_at_timestamp || 0), messages }
+      })
+      console.log(`[INFO][${stage}] Fetched ${result.length} conversations for ${category}/${topic}`)
+      return result
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
   }
 
   /**
