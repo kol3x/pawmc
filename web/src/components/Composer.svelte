@@ -61,7 +61,7 @@ async function send() {
 				: 'border-line text-dim hover:text-ink'}"
 			onclick={() => (noteMode = !noteMode)}
 			aria-pressed={noteMode}
-			title="Note mode: save text as context without an AI reply"
+			title="Save as a note — kept as context, no reply"
 		>
 			Note
 		</button>
@@ -72,7 +72,7 @@ async function send() {
 				oninput={autoGrow}
 				onkeydown={onKeydown}
 				rows="4"
-				placeholder={noteMode ? "Save a note (no AI response)…" : "Type a message…"}
+				placeholder={noteMode ? "Write a note (no reply)…" : "What's on your mind…"}
 				class="max-h-72 min-h-24 w-full resize-none rounded-xl border border-line bg-bg px-3.5 py-2.5 pr-16 text-base leading-relaxed placeholder:text-faint focus:border-accent focus:outline-none"
 			></textarea>
 			<div class="absolute bottom-2 right-2.5 text-[10px] leading-none text-faint">

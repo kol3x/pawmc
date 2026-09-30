@@ -72,9 +72,9 @@ async function refreshAll() {
 	try {
 		await api("POST", "/update-summaries")
 		await app.loadCategories()
-		pushToast("Summaries refreshed", "success")
+		pushToast("Memory refreshed", "success")
 	} catch (err) {
-		pushToast(`Couldn't refresh summaries — ${errorMessage(err)}`, "error")
+		pushToast(`Couldn't refresh memory — ${errorMessage(err)}`, "error")
 	} finally {
 		refreshing = false
 	}
@@ -85,7 +85,7 @@ async function refreshAll() {
  */
 function forgetCard(type: SummaryType | null): MemoryCard | null {
 	if (type === "topic" && topic) return { type: "topic", label: "Topic memory", summary: topic.summary, meta: "", id: topic.id }
-	if (type === "category" && category) return { type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id }
+	if (type === "category" && category) return { type: "category", label: "Diary overview", summary: category.summary, meta: "", id: category.id }
 	return null
 }
 
@@ -102,14 +102,14 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 		<div class="flex flex-col gap-1">
 			{#each folded.sections as section, i (i)}
 				{#if section.header === null}
-					<div class="md text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(section.body)}</div>
+					<div class="md font-serif text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(section.body)}</div>
 				{:else}
 					<details class="group" open={i === firstHeaderedIndex(folded)}>
 						<summary class="flex cursor-pointer select-none list-none items-center gap-1.5 rounded-md py-1 text-sm font-semibold text-ink transition-colors hover:text-accent [&::-webkit-details-marker]:hidden">
 							<svg class="shrink-0 text-faint transition-transform group-open:rotate-90" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg>
 							<span class="min-w-0 flex-1">{section.header}</span>
 						</summary>
-						<div class="md py-1 pl-5 text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(section.body)}</div>
+						<div class="md py-1 pl-5 font-serif text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(section.body)}</div>
 					</details>
 				{/if}
 			{/each}
@@ -120,10 +120,10 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 				<svg class="shrink-0 text-faint transition-transform group-open:rotate-90" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg>
 				<span class="min-w-0 flex-1">Show summary</span>
 			</summary>
-			<div class="md py-1 text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(fullText)}</div>
+			<div class="md py-1 font-serif text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(fullText)}</div>
 		</details>
 	{:else}
-		<div class="md text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(fullText)}</div>
+		<div class="md font-serif text-sm leading-relaxed text-dim md:text-base">{@html renderMarkdown(fullText)}</div>
 	{/if}
 {/snippet}
 
@@ -135,7 +135,7 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 				class="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-panel-2 hover:text-ink disabled:opacity-40"
 				disabled={refreshing}
 				onclick={() => void refreshAll()}
-				title="Refresh all summaries"
+				title="Rebuild memory from your conversations"
 			>
 				<svg class={refreshing ? "animate-spin" : ""} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
 				Refresh
@@ -166,7 +166,7 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 	<div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
 		{#if !category}
 			<p class="px-1 text-xs leading-relaxed text-faint">
-				Pick a category to see its memory build here as conversations get folded.
+				Pick a diary to see its memory build here as you talk.
 			</p>
 		{:else}
 			{#if topic}
@@ -201,7 +201,7 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 					</div>
 				{:else}
 					<div class="flex items-center gap-2 px-1 {mobileTab === 'topic' ? '' : 'hidden'} md:flex">
-						<p class="text-xs text-faint">No topic memory yet — it builds as conversations get folded.</p>
+						<p class="text-xs text-faint">No memory yet — it builds as you talk.</p>
 						<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "topic", label: "Topic memory", summary: "", meta: "", id: topic.id })}>
 							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
 						</button>
@@ -219,16 +219,16 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 					></textarea>
 					<div class="mt-2 flex justify-end gap-2">
 						<button class="rounded-lg border border-line px-3 py-1.5 text-xs text-dim hover:text-ink" onclick={() => (editing = null)}>Cancel</button>
-						<button class="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/85" onclick={() => void saveEdit({ type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id })}>Save</button>
+						<button class="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/85" onclick={() => void saveEdit({ type: "category", label: "Diary overview", summary: category.summary, meta: "", id: category.id })}>Save</button>
 					</div>
 				</div>
 			{:else if categoryFolded}
 				<div class="flex flex-col rounded-xl border border-line bg-panel {mobileTab === 'category' ? 'flex' : 'hidden'} md:flex">
 					<div class="flex items-center gap-2 border-b border-line px-3 py-2">
-						<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Category overview</h3>
+						<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Diary overview</h3>
 						<span class="text-[10px] text-faint">{relativeTime(category.updated_at_timestamp)}</span>
 						<div class="flex-1"></div>
-						<button class="text-faint transition-colors hover:text-ink" title="Revise" onclick={() => startEdit({ type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id })}>
+						<button class="text-faint transition-colors hover:text-ink" title="Revise" onclick={() => startEdit({ type: "category", label: "Diary overview", summary: category.summary, meta: "", id: category.id })}>
 							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
 						</button>
 						<button class="text-faint transition-colors hover:text-danger" title="Forget" onclick={() => (forgetType = "category")}>
@@ -241,8 +241,8 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 				</div>
 			{:else}
 				<div class="flex items-center gap-2 px-1 {mobileTab === 'category' ? '' : 'hidden'} md:flex">
-					<p class="text-xs text-faint">No category overview yet — it builds from topic memories.</p>
-					<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "category", label: "Category overview", summary: "", meta: "", id: category.id })}>
+					<p class="text-xs text-faint">No diary overview yet — it builds from topic memories.</p>
+					<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "category", label: "Diary overview", summary: "", meta: "", id: category.id })}>
 						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
 					</button>
 				</div>
@@ -254,7 +254,7 @@ function firstHeaderedIndex(folded: FoldedSummary): number {
 <ConfirmModal
 	open={forgetType !== null}
 	title="Forget memory"
-	body={`Clear the ${forgetType ?? ""} memory? Existing conversations stay; the memory rebuilds from them on the next summary update.`}
+	body={`Clear the ${forgetType ?? ""} memory? Your conversations stay — memory rebuilds from them next time it updates.`}
 	onconfirm={() => {
 		const card = forgetCard(forgetType)
 		if (card) void forget(card)

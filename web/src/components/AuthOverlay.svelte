@@ -33,7 +33,7 @@ async function submit(e: SubmitEvent) {
 		<input
 			type="password"
 			autocomplete="current-password"
-			placeholder="Bearer token"
+			placeholder="API key"
 			bind:value
 			class="h-10 w-full rounded-lg border border-line bg-panel px-3 text-sm focus:border-accent focus:outline-none"
 		/>

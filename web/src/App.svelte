@@ -145,11 +145,11 @@
 	}
 
 	function onRenameCategory(cat: CategorySummary) {
-		renameEntity("Rename category", cat.name, async (name) => {
+		renameEntity("Rename diary", cat.name, async (name) => {
 			try {
 				await api("POST", "/rename-category", { id: cat.id, name })
 				await app.loadCategories()
-				pushToast("Category renamed", "success")
+				pushToast("Diary renamed", "success")
 			} catch (err) {
 				pushApiError(err, "rename")
 			}
@@ -170,14 +170,14 @@
 
 	function onDeleteCategory(cat: CategorySummary) {
 		confirmConfig = {
-			title: "Delete category",
+			title: "Delete diary",
 			body: `Delete "${cat.name}" with all its topics and conversations? This cannot be undone.`,
 			confirm: async () => {
 				try {
 					await api("DELETE", `/category?id=${cat.id}`)
 					await app.loadCategories()
 					await app.loadStream()
-					pushToast("Category deleted", "success")
+					pushToast("Diary deleted", "success")
 				} catch (err) {
 					pushApiError(err, "delete")
 				}
@@ -218,7 +218,7 @@
 	<div class="flex h-dvh flex-col overflow-hidden">
 		<header class="border-b border-line bg-panel/60 pt-2">
 			<div class="flex items-center gap-1">
-				<h1 class="shrink-0 pl-4 pr-1 text-sm font-semibold tracking-tight">pawmc</h1>
+				<h1 class="shrink-0 pl-4 pr-1 font-serif text-sm font-semibold tracking-tight">pawmc</h1>
 				<div class="min-w-0 flex-1">
 					<CategoryTabs
 						onrenamecategory={onRenameCategory}
@@ -231,6 +231,15 @@
 					title="Memory"
 					aria-label="Memory"
 					onclick={() => (memoryOpen = true)}
+				>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+				</button>
+				<button
+					class="icon-btn hidden md:inline-flex"
+					title="Memory"
+					aria-label="Memory"
+					aria-pressed={!app.memoryHidden}
+					onclick={() => (app.memoryHidden = !app.memoryHidden)}
 				>
 					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
 				</button>

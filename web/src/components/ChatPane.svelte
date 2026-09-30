@@ -99,16 +99,18 @@ function restoreDraft(draft: string) {
 }
 </script>
 <div class="flex min-h-0 flex-1">
-	<aside class="hidden w-[26rem] shrink-0 flex-col border-r border-line bg-panel/40 md:flex xl:w-[30rem]">
-		<MemoryBar />
-	</aside>
+	{#if !app.memoryHidden}
+		<aside class="hidden w-[26rem] shrink-0 flex-col border-r border-line bg-panel/40 md:flex xl:w-[30rem]">
+			<MemoryBar />
+		</aside>
+	{/if}
 	<div class="flex min-w-0 flex-1 flex-col">
 		<TopicPicker oncancel={restoreDraft} />
 		<div bind:this={scrollerEl} onscroll={onScroll} class="flex-1 overflow-y-auto px-4 py-4">
 		{#if !app.selectedCategory && !app.pendingCategoryName}
 			<div class="flex h-full items-center justify-center">
-				<p class="max-w-xs text-center text-xs leading-relaxed text-faint">
-					Pick a category above — or start a new one with the + chip. New categories become real with your first message.
+				<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
+					Pick a diary above, or start a new one with the + chip. A diary begins with your first message.
 				</p>
 			</div>
 		{:else if !app.stream.length}
@@ -118,17 +120,17 @@ function restoreDraft(draft: string) {
 				</div>
 			{:else}
 				<div class="flex h-full items-center justify-center">
-					<p class="max-w-xs text-center text-xs leading-relaxed text-faint">
-						{#if app.pendingCategoryName}
-							"{app.pendingCategoryName}" is ready — your first message here creates it and starts the conversation.
-						{:else if app.selectedTopic}
-							{app.selectedTopic.summary
-								? "Memory holds the context of this topic. Messages you send continue below."
-								: "Messages you send appear here and keep building this topic's memory."}
-						{:else}
-							Send your first message — a topic is generated for it automatically, or pick an existing one above.
-						{/if}
-					</p>
+					<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
+					{#if app.pendingCategoryName}
+						"{app.pendingCategoryName}" is ready — your first message here creates it.
+					{:else if app.selectedTopic}
+						{app.selectedTopic.summary
+							? "Memory holds this topic's context — new messages continue below."
+							: "Messages you send appear here and build this topic's memory."}
+					{:else}
+						Send your first message — a topic is created for it automatically, or pick one above.
+					{/if}
+				</p>
 				</div>
 			{/if}
 		{:else}
@@ -143,7 +145,7 @@ function restoreDraft(draft: string) {
 									aria-expanded={expandedSpoilers.has(group.id)}
 								>
 									<span class="shrink-0 text-[10px] text-faint">{fmtDate(group.createdAt)} · {relativeTime(group.createdAt)}</span>
-									<span class="shrink-0 rounded-full border border-line px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-faint">folded into memory</span>
+									<span class="shrink-0 rounded-full border border-line px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-faint">in memory</span>
 									{#if spoilerSummary}
 										<span class="min-w-0 flex-1 truncate text-xs text-dim">{spoilerSummary}</span>
 									{/if}
@@ -201,14 +203,16 @@ function restoreDraft(draft: string) {
 			</div>
 		{/if}
 	</div>
-	<Composer bind:this={composerRef} onsend={app.sendMessage} />
+	<div class={app.memoryHidden ? "mx-auto w-full max-w-3xl" : ""}>
+			<Composer bind:this={composerRef} onsend={app.sendMessage} />
+		</div>
 </div>
 </div>
 
 <ConfirmModal
 	open={deleteGroup !== null}
 	title="Delete conversation"
-	body="Delete this whole conversation? If it was already folded into memory, the memory keeps its content."
+	body="Delete this conversation? What's already in memory stays — only the transcript is removed."
 	onconfirm={deleteConversation}
 	onclose={() => (deleteGroup = null)}
 />

@@ -36,7 +36,7 @@ function cancelNew() {
 	newName = ""
 }
 </script>
-<div class="flex items-center gap-1 overflow-x-auto px-2" role="tablist" aria-label="Categories">
+<div class="flex items-center gap-1 overflow-x-auto px-2" role="tablist" aria-label="Diaries">
 	{#if app.categories === null}
 		<div class="px-2 py-2 text-xs text-faint">Loading…</div>
 	{:else}
@@ -57,7 +57,7 @@ function cancelNew() {
 					<FreshnessDot ts={cat.updated_at_timestamp} />
 				</button>
 				<Menu
-					label="Category actions"
+					label="Diary actions"
 					items={[
 						{ label: "Rename", onpick: () => onrenamecategory(cat) },
 						{ label: "Delete", danger: true, onpick: () => ondeletecategory(cat) },
@@ -71,14 +71,14 @@ function cancelNew() {
 	{#if app.pendingCategoryName}
 		<div
 			class="flex shrink-0 items-center gap-1.5 rounded-lg border border-dashed border-accent/60 px-2.5 py-1.5 text-sm font-medium text-accent"
-			title="Not saved yet — this category becomes real with your first message"
+			title="Not saved yet — this diary starts with your first message"
 		>
 			<span class="max-w-40 truncate italic">{app.pendingCategoryName}</span>
 			<button
 				class="text-faint transition-colors hover:text-danger"
 				onclick={() => app.cancelPendingCategory()}
-				title="Discard new category"
-				aria-label="Discard new category"
+title="Discard new diary"
+			aria-label="Discard new diary"
 			>
 				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
 			</button>
@@ -86,7 +86,7 @@ function cancelNew() {
 	{/if}
 	{#if creating}
 		<input
-			placeholder="Category name — Enter"
+			placeholder="Diary name — Enter"
 			bind:value={newName}
 			bind:this={newInputEl}
 			onkeydown={(e) => {
@@ -105,7 +105,7 @@ function cancelNew() {
 		<button
 			class="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm text-faint transition-colors hover:bg-panel-2 hover:text-ink"
 			onclick={() => (creating = true)}
-			title="New category"
+			title="New diary"
 		>
 			<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
 			New

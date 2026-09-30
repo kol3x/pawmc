@@ -29,7 +29,7 @@ function cancel() {
 </script>
 {#if app.topicNeeded}
 	<div class="border-b border-accent/30 bg-accent-soft/50 px-4 py-3">
-		<p class="mb-2 text-xs text-dim">Nothing was saved yet — where does this message belong?</p>
+		<p class="mb-2 text-xs text-dim">Nothing saved yet — where does this belong?</p>
 		<div class="flex flex-wrap gap-1.5">
 			{#each app.topicNeeded.candidates as c (c.name)}
 				<button
@@ -43,7 +43,6 @@ function cancel() {
 					{#if c.exists}
 						<span class="rounded-full border border-line px-1.5 text-[10px] uppercase tracking-wide text-faint">existing</span>
 					{/if}
-					<span class="text-[10px] text-faint">{Math.round(c.confidence * 100)}%</span>
 				</button>
 			{/each}
 		</div>

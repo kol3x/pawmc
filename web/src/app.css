@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
 @theme {
-	--color-bg: oklch(0.145 0.004 286);
-	--color-panel: oklch(0.205 0.006 286);
-	--color-panel-2: oklch(0.26 0.007 286);
-	--color-line: oklch(0.35 0.01 286);
-	--color-ink: oklch(0.97 0.003 286);
-	--color-dim: oklch(0.76 0.01 286);
-	--color-faint: oklch(0.585 0.01 286);
-	--color-accent: oklch(0.64 0.19 292);
-	--color-accent-soft: oklch(0.64 0.19 292 / 0.16);
-	--color-danger: oklch(0.64 0.19 25);
-	--color-danger-soft: oklch(0.64 0.19 25 / 0.16);
-	--color-fresh: oklch(0.75 0.16 155);
-	--color-aging: oklch(0.78 0.14 85);
-	--color-stale: oklch(0.7 0.13 55);
+	--color-bg: oklch(0.975 0.012 85);
+	--color-panel: oklch(0.95 0.014 85);
+	--color-panel-2: oklch(0.915 0.017 82);
+	--color-line: oklch(0.865 0.02 78);
+	--color-ink: oklch(0.26 0.025 55);
+	--color-dim: oklch(0.44 0.025 60);
+	--color-faint: oklch(0.58 0.02 65);
+	--color-accent: oklch(0.56 0.13 40);
+	--color-accent-soft: oklch(0.56 0.13 40 / 0.12);
+	--color-danger: oklch(0.55 0.18 28);
+	--color-danger-soft: oklch(0.55 0.18 28 / 0.12);
+	--color-fresh: oklch(0.62 0.14 155);
+	--color-aging: oklch(0.68 0.13 85);
+	--color-stale: oklch(0.6 0.12 55);
 
 	--font-sans:
 		ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
 		sans-serif;
+	--font-serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
 	--font-mono:
 		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* Dark theme: same warm-paper palette at night — overrides the color tokens only. */
+html.dark {
+	--color-bg: oklch(0.16 0.012 55);
+	--color-panel: oklch(0.205 0.014 55);
+	--color-panel-2: oklch(0.265 0.016 55);
+	--color-line: oklch(0.35 0.02 55);
+	--color-ink: oklch(0.93 0.012 85);
+	--color-dim: oklch(0.73 0.015 75);
+	--color-faint: oklch(0.55 0.015 70);
+	--color-accent: oklch(0.58 0.12 40);
+	--color-accent-soft: oklch(0.58 0.12 40 / 0.16);
+	--color-danger: oklch(0.66 0.16 25);
+	--color-danger-soft: oklch(0.66 0.16 25 / 0.14);
+}
+
+:root {
+	color-scheme: light;
+}
+
+html.dark {
+	color-scheme: dark;
 }
 
 html,

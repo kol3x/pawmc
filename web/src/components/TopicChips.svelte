@@ -48,7 +48,7 @@ const byRecency = $derived.by(() => {
 	<button
 		class="flex shrink-0 items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs text-faint transition-colors hover:border-accent/40 hover:text-ink"
 		onclick={() => app.deselectTopic()}
-		title="Start a fresh topic — the next message gets a new auto-generated topic"
+		title="Start a new topic — the next message gets one automatically"
 	>
 		<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
 		New topic

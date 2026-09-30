@@ -67,6 +67,62 @@ export function initAuth(): void {
 	)
 }
 
+/** Theme preference: "system" follows the OS color scheme; persisted in localStorage. */
+export type ThemePref = "system" | "dark" | "light"
+
+const THEME_KEY = "pa_theme"
+const THEME_COLORS: Record<"light" | "dark", string> = {
+	light: "#f6f0e4",
+	dark: "#1a1411",
+}
+
+class ThemeState {
+	pref = $state<ThemePref>("system")
+}
+
+/** Reactive theme preference shown in Settings; "system" tracks prefers-color-scheme live. */
+export const theme = new ThemeState()
+
+/**
+ * Resolves whether a theme preference currently renders dark.
+ */
+function themeIsDark(pref: ThemePref): boolean {
+	return (
+		pref === "dark" ||
+		(pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+	)
+}
+
+/**
+ * Applies the active theme to the document (html.dark class) and the mobile browser theme-color meta.
+ */
+function applyTheme(): void {
+	const dark = themeIsDark(theme.pref)
+	document.documentElement.classList.toggle("dark", dark)
+	document
+		.querySelector('meta[name="theme-color"]')
+		?.setAttribute("content", THEME_COLORS[dark ? "dark" : "light"])
+}
+
+/**
+ * Restores the stored theme preference (default "system"), applies it, and follows OS scheme changes. Call once at startup.
+ */
+export function initTheme(): void {
+	const stored = localStorage.getItem(THEME_KEY)
+	theme.pref = stored === "dark" || stored === "light" ? stored : "system"
+	applyTheme()
+	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme())
+}
+
+/**
+ * Persists and applies a new theme preference from Settings.
+ */
+export function setTheme(pref: ThemePref): void {
+	theme.pref = pref
+	localStorage.setItem(THEME_KEY, pref)
+	applyTheme()
+}
+
 /**
  * Stores a new API key and clears the invalid flag.
  */
@@ -149,6 +205,8 @@ class AppState {
 	lastCategoriesLoad = 0
 	/** Bumped on every user-driven selection change; background refreshes abort when it moves so they cannot override navigation. */
 	selectionEpoch = 0
+	/** Hides the desktop memory panel (chat centers); session-only, reset on reload. */
+	memoryHidden = $state(false)
 
 	selectedCategory = $derived.by(
 		() => this.categories?.find((c) => c.id === this.categoryId) ?? null,
@@ -287,7 +345,7 @@ class AppState {
 				}))
 				.filter((g) => g.messages.length > 0)
 		} catch (err) {
-			pushToast(`Couldn't load the conversation stream — ${errorMessage(err)}`, "error")
+			pushToast(`Couldn't load this topic's messages — ${errorMessage(err)}`, "error")
 		} finally {
 			this.loadingStream = false
 		}
@@ -314,7 +372,7 @@ class AppState {
 
 		const catName = categoryName || this.pendingCategoryName || this.selectedCategory?.name
 		if (!catName) {
-			pushToast("Pick a category first", "error")
+			pushToast("Pick a diary first", "error")
 			return false
 		}
 		const topicName = topicOverride?.trim() || this.selectedTopic?.name || ""
