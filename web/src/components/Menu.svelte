@@ -4,6 +4,8 @@ import type { Snippet } from "svelte"
 export interface MenuItem {
 	label: string
 	danger?: boolean
+	/** Marks the entry as the currently active one (accent text). */
+	active?: boolean
 	onpick: () => void
 }
 
@@ -65,8 +67,10 @@ function pick(item: MenuItem) {
 			{#each items as item (item.label)}
 				<button
 					onclick={() => pick(item)}
-					class="block w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-panel-2 {item.danger
-						? 'text-danger'
+class="block w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-panel-2 {item.danger
+					? 'text-danger'
+					: item.active
+						? 'text-accent'
 						: 'text-dim hover:text-ink'}"
 				>
 					{item.label}
