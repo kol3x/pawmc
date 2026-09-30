@@ -1,11 +1,10 @@
 <script lang="ts">
-import { app } from "../lib/appState.svelte"
-import { api } from "../api"
+import { app, pushToast } from "../lib/appState.svelte"
+import { api, errorMessage } from "../api"
 import { relativeTime } from "../lib/freshness"
 import { renderMarkdown } from "../lib/markdown"
 import { foldedSummary, type FoldedSummary } from "../lib/summary"
-import { pushToast } from "../lib/toasts.svelte"
-import type { SummaryType } from "../api-types"
+import type { SummaryType } from "../api"
 import ConfirmModal from "./ConfirmModal.svelte"
 
 interface MemoryCard {
@@ -88,13 +87,6 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 	if (type === "topic" && topic) return { type: "topic", label: "Topic memory", summary: topic.summary, meta: "", id: topic.id }
 	if (type === "category" && category) return { type: "category", label: "Category overview", summary: category.summary, meta: "", id: category.id }
 	return null
-}
-
-/**
- * Formats a thrown value for toasts: the message for Error instances, the stringified value otherwise.
- */
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err)
 }
 
 /**

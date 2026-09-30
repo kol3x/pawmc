@@ -1,7 +1,6 @@
 <script lang="ts">
-import Modal from "./ui/Modal.svelte"
-import { auth, saveKey } from "../lib/auth.svelte"
-import { pushToast } from "../lib/toasts.svelte"
+import Modal from "./Modal.svelte"
+import { auth, saveKey, pushToast } from "../lib/appState.svelte"
 
 interface Props {
 	open: boolean

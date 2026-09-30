@@ -7,9 +7,75 @@ import type {
 	TopicCandidate,
 	TopicNeededResponse,
 	TopicStreamEntry,
-} from "../api-types"
-import { api, ApiError } from "../api"
-import { pushToast } from "./toasts.svelte"
+} from "../api"
+import { api, ApiError, bindAuth, errorMessage } from "../api"
+
+const STORAGE_KEY = "pa_api_key"
+
+export type ToastKind = "info" | "success" | "error"
+
+export interface Toast {
+	id: number
+	msg: string
+	kind: ToastKind
+}
+
+/** Global toast queue rendered inline by App. */
+class ToastState {
+	list = $state<Toast[]>([])
+}
+
+export const toasts = new ToastState()
+
+let nextToastId = 1
+
+/**
+ * Queues a toast shown for ~3.5s.
+ */
+export function pushToast(msg: string, kind: ToastKind = "info"): void {
+	const id = nextToastId++
+	toasts.list = [...toasts.list, { id, msg, kind }]
+	window.setTimeout(() => dismissToast(id), 3500)
+}
+
+/**
+ * Removes a toast by id.
+ */
+export function dismissToast(id: number): void {
+	toasts.list = toasts.list.filter((t) => t.id !== id)
+}
+
+/** Auth state for the Bearer API key, persisted in localStorage under the same key as the legacy UI. */
+class AuthState {
+	key = $state("")
+	/** Set when a request was rejected with 401 while a key was configured. */
+	invalid = $state(false)
+}
+
+export const auth = new AuthState()
+
+/**
+ * Restores the stored API key and wires it into the api() helper. Call once at startup.
+ */
+export function initAuth(): void {
+	auth.key = localStorage.getItem(STORAGE_KEY) ?? ""
+	bindAuth(
+		() => auth.key,
+		() => {
+			if (auth.key) auth.invalid = true
+		},
+	)
+}
+
+/**
+ * Stores a new API key and clears the invalid flag.
+ */
+export function saveKey(key: string): void {
+	auth.key = key.trim()
+	auth.invalid = false
+	if (auth.key) localStorage.setItem(STORAGE_KEY, auth.key)
+	else localStorage.removeItem(STORAGE_KEY)
+}
 
 /** A message in the merged continuous stream, tagged with its owning conversation. */
 export interface StreamMessage extends ChatMessage {
@@ -273,7 +339,7 @@ class AppState {
 		this.sending = true
 		const sentEpoch = this.selectionEpoch
 		const promise = api<ChatResponse>("POST", "/chat", payload)
-		const pc: PendingChat = {
+		let pc: PendingChat = {
 			promise,
 			category: catName,
 			topic: topicName,
@@ -283,6 +349,9 @@ class AppState {
 			recovered: false,
 		}
 		this.pendingChat = pc
+		// Reading the field back yields the reactive proxy instance; identity checks
+		// and the recovered flag must run against that same instance, not the raw object.
+		pc = this.pendingChat as PendingChat
 		try {
 			const res = await promise
 
@@ -447,13 +516,6 @@ class AppState {
 			return false
 		}
 	}
-}
-
-/**
- * Formats a thrown value for toasts: the message for Error instances, the stringified value otherwise.
- */
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err)
 }
 
 export const app = new AppState()

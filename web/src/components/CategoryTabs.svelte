@@ -1,8 +1,8 @@
 <script lang="ts">
 import { app } from "../lib/appState.svelte"
-import type { CategorySummary } from "../api-types"
+import type { CategorySummary } from "../api"
 import FreshnessDot from "./FreshnessDot.svelte"
-import Menu from "./ui/Menu.svelte"
+import Menu from "./Menu.svelte"
 
 interface Props {
 	onrenamecategory: (cat: CategorySummary) => void

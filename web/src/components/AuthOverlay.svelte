@@ -1,6 +1,5 @@
 <script lang="ts">
-import { auth, saveKey } from "../lib/auth.svelte"
-import { app } from "../lib/appState.svelte"
+import { app, auth, saveKey } from "../lib/appState.svelte"
 
 /**
  * Full-screen API key entry shown when no key is stored or the key was rejected with 401.

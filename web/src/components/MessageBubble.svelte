@@ -1,7 +1,7 @@
 <script lang="ts">
 import { type StreamMessage } from "../lib/appState.svelte"
 import { renderMarkdown } from "../lib/markdown"
-import Menu from "./ui/Menu.svelte"
+import Menu from "./Menu.svelte"
 
 interface Props {
 	msg: StreamMessage

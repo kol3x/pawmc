@@ -1,13 +1,12 @@
 <script lang="ts">
-import { app, type ConversationGroup, type StreamMessage } from "../lib/appState.svelte"
+import { app, pushToast, type ConversationGroup, type StreamMessage } from "../lib/appState.svelte"
 import { relativeTime } from "../lib/freshness"
-import { api, ApiError } from "../api"
-import { pushToast } from "../lib/toasts.svelte"
+import { api, ApiError, errorMessage } from "../api"
 import MessageBubble from "./MessageBubble.svelte"
 import Composer from "./Composer.svelte"
 import MemoryBar from "./MemoryBar.svelte"
 import TopicPicker from "./TopicPicker.svelte"
-import Menu from "./ui/Menu.svelte"
+import Menu from "./Menu.svelte"
 import ConfirmModal from "./ConfirmModal.svelte"
 
 /**
@@ -31,7 +30,7 @@ async function saveEdit(msg: StreamMessage, content: string) {
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404)
 			pushToast("Message editing needs a backend update (v2)", "error")
-		else pushToast(`Couldn't edit — ${err instanceof Error ? err.message : String(err)}`, "error")
+		else pushToast(`Couldn't edit — ${errorMessage(err)}`, "error")
 	}
 }
 
@@ -42,7 +41,7 @@ async function deleteMessage(msg: StreamMessage) {
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404)
 			pushToast("Message deletion needs a backend update (v2)", "error")
-		else pushToast(`Couldn't delete — ${err instanceof Error ? err.message : String(err)}`, "error")
+		else pushToast(`Couldn't delete — ${errorMessage(err)}`, "error")
 	}
 }
 
@@ -55,7 +54,7 @@ async function deleteConversation() {
 		await app.loadStream()
 		await app.loadCategories()
 	} catch (err) {
-		pushToast(`Couldn't delete conversation — ${err instanceof Error ? err.message : String(err)}`, "error")
+		pushToast(`Couldn't delete conversation — ${errorMessage(err)}`, "error")
 	}
 }
 

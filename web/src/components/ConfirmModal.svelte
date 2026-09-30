@@ -1,5 +1,5 @@
 <script lang="ts">
-import Modal from "./ui/Modal.svelte"
+import Modal from "./Modal.svelte"
 
 interface Props {
 	open: boolean

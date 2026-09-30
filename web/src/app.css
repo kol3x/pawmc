@@ -45,6 +45,24 @@ body {
 	outline-offset: 1px;
 }
 
+/* Square icon button used in the header. */
+.icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 2rem;
+	width: 2rem;
+	border-radius: 0.375rem;
+	color: var(--color-dim);
+	transition:
+		color 150ms,
+		background-color 150ms;
+}
+.icon-btn:hover {
+	background: var(--color-panel-2);
+	color: var(--color-ink);
+}
+
 * {
 	scrollbar-width: thin;
 	scrollbar-color: var(--color-line) transparent;

@@ -1,4 +1,81 @@
-import type { ApiErrorBody } from "./api-types"
+/** Client and request/response shapes of the pawmc worker API. */
+
+export interface ChatMessage {
+	role: string
+	content: string
+}
+
+export interface TopicSummary {
+	id: number
+	name: string
+	summary: string
+	/** One-sentence distilled description used for at-a-glance recognition (v2 backend). */
+	micro_summary?: string
+	updated_at_timestamp: number
+}
+
+export interface CategorySummary extends TopicSummary {
+	topics: TopicSummary[]
+}
+
+export interface ConversationListEntry {
+	id: number
+	category: string
+	topic: string
+	created_at: number
+	last_message: string
+}
+
+export interface ConversationDetail {
+	id: number
+	category: string
+	topic: string
+	messages: ChatMessage[]
+}
+
+/** One conversation in a GET /topic-stream response. */
+export interface TopicStreamEntry {
+	id: number
+	created_at: number
+	messages: ChatMessage[]
+}
+
+/** v2 /chat response: topic/topicId are present when the backend supports topic autogen. */
+export interface ChatResponse {
+	response: string
+	conversationId: number
+	topic?: string
+	topicId?: number
+}
+
+/** One ranked topic proposal from the autotopic gate; `exists` marks topics already in the category. */
+export interface TopicCandidate {
+	name: string
+	summary: string
+	confidence: number
+	exists: boolean
+	description?: string
+}
+
+/** 422 /chat response when the autotopic confidence gate is too low: nothing was stored. */
+export interface TopicNeededResponse {
+	topicNeeded: true
+	candidates: TopicCandidate[]
+}
+
+export type SummaryType = "category" | "topic"
+
+/** Payload of POST /update-summary. Empty summary means forget. */
+export interface UpdateSummaryRequest {
+	type: SummaryType
+	id: number
+	summary: string
+}
+
+/** Body shape of all worker error responses. */
+export interface ApiErrorBody {
+	error: string
+}
 
 /** Error thrown by api() for non-2xx responses, carrying the HTTP status and the parsed body (e.g. the 422 topic-needed payload). */
 export class ApiError extends Error {
@@ -45,16 +122,23 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
  * Returns the current Bearer header value, empty when no API key is set.
  */
 function authHeader(): string {
-	// Imported lazily to avoid a circular import at module-eval time.
+	// Read lazily via the bound accessor to avoid a circular import at module-eval time.
 	const key = authKey()
 	return key ? `Bearer ${key}` : ""
+}
+
+/**
+ * Formats a thrown value for user-facing messages: the message for Error instances, the stringified value otherwise.
+ */
+export function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err)
 }
 
 let authKey: () => string = () => ""
 let markUnauthorized: () => void = () => {}
 
 /**
- * Registers the auth store accessors so api() can attach the Bearer header and flag 401s without a circular import.
+ * Registers the auth state accessors so api() can attach the Bearer header and flag 401s without a circular import.
  */
 export function bindAuth(keyGetter: () => string, onUnauthorized: () => void) {
 	authKey = keyGetter
