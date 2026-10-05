@@ -1,5 +1,6 @@
 <script lang="ts">
 import { app } from "../lib/appState.svelte"
+import { ui } from "../lib/uiState.svelte"
 import type { CategorySummary } from "../api"
 import FreshnessDot from "./FreshnessDot.svelte"
 import Menu from "./Menu.svelte"
@@ -97,6 +98,7 @@ const moreItems = $derived.by(() => {
 					{cat.name}
 					<FreshnessDot ts={cat.updated_at_timestamp} />
 				</button>
+			{#if ui.canMutate}
 				<Menu
 					label="Diary actions"
 					items={[
@@ -106,6 +108,7 @@ const moreItems = $derived.by(() => {
 				>
 					<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
 				</Menu>
+			{/if}
 			</div>
 		{/each}
 	{/if}
@@ -144,7 +147,7 @@ const moreItems = $derived.by(() => {
 			onblur={() => creating && newName.trim() === "" && cancelNew()}
 			class="h-8 w-28 shrink-0 rounded-lg border border-accent/50 bg-bg px-2.5 text-sm placeholder:text-faint focus:border-accent focus:outline-none sm:w-40"
 		/>
-	{:else if !app.pendingCategoryName}
+	{:else if !app.pendingCategoryName && ui.canMutate}
 		<button
 			data-overflow-trailing
 			class="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm text-faint transition-colors hover:bg-panel-2 hover:text-ink"

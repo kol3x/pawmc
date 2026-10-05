@@ -1,5 +1,6 @@
 <script lang="ts">
 import { app, auth, saveKey } from "../lib/appState.svelte"
+import { ui } from "../lib/uiState.svelte"
 
 /**
  * Full-screen API key entry shown when no key is stored or the key was rejected with 401.
@@ -43,6 +44,13 @@ async function submit(e: SubmitEvent) {
 			class="mt-3 h-10 w-full rounded-lg bg-accent text-sm font-medium text-white hover:bg-accent/85 disabled:opacity-40"
 		>
 			Unlock
+		</button>
+		<button
+			type="button"
+			class="mt-2 h-10 w-full rounded-lg border border-line text-sm text-dim transition-colors hover:bg-panel hover:text-ink"
+			onclick={() => (ui.demoActive = true)}
+		>
+			Try the demo — no key needed
 		</button>
 	</form>
 </div>

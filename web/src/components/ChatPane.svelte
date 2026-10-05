@@ -1,7 +1,9 @@
 <script lang="ts">
 import { app, pushToast, type ConversationGroup, type StreamMessage } from "../lib/appState.svelte"
+import { ui } from "../lib/uiState.svelte"
 import { relativeTime } from "../lib/freshness"
 import { api, ApiError, errorMessage } from "../api"
+import type { Component } from "svelte"
 import MessageBubble from "./MessageBubble.svelte"
 import Composer from "./Composer.svelte"
 import MemoryBar from "./MemoryBar.svelte"
@@ -17,6 +19,14 @@ import ConfirmModal from "./ConfirmModal.svelte"
 let composerRef = $state<Composer | null>(null)
 let deleteGroup = $state<ConversationGroup | null>(null)
 let expandedSpoilers = $state<Set<number>>(new Set())
+let DemoComposer = $state<Component | null>(null)
+
+// In the demo the composer swaps for precomputed message drafts; loaded lazily so
+// normal users never fetch demo code.
+$effect(() => {
+	if (!ui.demoActive || DemoComposer) return
+	void import("./demo/DemoComposer.svelte").then((m) => (DemoComposer = m.default))
+})
 
 export function focusComposer() {
 	composerRef?.focus()
@@ -100,7 +110,7 @@ function restoreDraft(draft: string) {
 </script>
 <div class="flex min-h-0 flex-1">
 	{#if !app.memoryHidden}
-		<aside class="hidden w-[26rem] shrink-0 flex-col border-r border-line bg-panel/40 md:flex xl:w-[30rem]">
+		<aside class="hidden w-[26rem] shrink-0 flex-col border-r border-line bg-panel/40 md:flex xl:w-[30rem]" class:demo-spotlight={ui.spotlightMemory}>
 			<MemoryBar />
 		</aside>
 	{/if}
@@ -154,7 +164,7 @@ function restoreDraft(draft: string) {
 										width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
 									><polyline points="9 6 15 12 9 18"/></svg>
 								</button>
-								{#if group.id > 0}
+								{#if group.id > 0 && ui.canMutate}
 									<Menu label="Conversation actions" items={[
 										{ label: "Delete conversation", danger: true, onpick: () => (deleteGroup = group) },
 									]}>
@@ -175,24 +185,24 @@ function restoreDraft(draft: string) {
 							<div class="mb-1.5 flex items-center gap-2 text-[10px] text-faint">
 								<span>{fmtDate(group.createdAt)} · {relativeTime(group.createdAt)}</span>
 								<span class="rounded-full border border-accent/40 bg-accent-soft px-1.5 py-0.5 uppercase tracking-wide text-accent">current</span>
-								{#if group.id > 0}
-									<Menu label="Conversation actions" items={[
-										{ label: "Delete conversation", danger: true, onpick: () => (deleteGroup = group) },
-									]}>
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
-									</Menu>
-								{/if}
-							</div>
-							<div class="flex flex-col gap-2.5 pb-3">
-								{#each group.messages as msg (msg.pending ? `p-${msg.createdAt}` : `${group.id}-${msg.index}`)}
-									<MessageBubble
-										{msg}
-										canEdit={msg.role === "user" && !group.summarized && !msg.pending && group.id > 0}
-										canMutate={!group.summarized && !msg.pending && group.id > 0}
-										onedit={saveEdit}
-										ondelete={deleteMessage}
-									/>
-								{/each}
+							{#if group.id > 0 && ui.canMutate}
+								<Menu label="Conversation actions" items={[
+									{ label: "Delete conversation", danger: true, onpick: () => (deleteGroup = group) },
+								]}>
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+								</Menu>
+							{/if}
+						</div>
+						<div class="flex flex-col gap-2.5 pb-3">
+							{#each group.messages as msg (msg.pending ? `p-${msg.createdAt}` : `${group.id}-${msg.index}`)}
+								<MessageBubble
+									{msg}
+									canEdit={msg.role === "user" && !group.summarized && !msg.pending && group.id > 0 && ui.canMutate}
+									canMutate={!group.summarized && !msg.pending && group.id > 0 && ui.canMutate}
+									onedit={saveEdit}
+									ondelete={deleteMessage}
+								/>
+							{/each}
 							</div>
 						</div>
 					{/if}
@@ -204,8 +214,12 @@ function restoreDraft(draft: string) {
 		{/if}
 	</div>
 	<div class={app.memoryHidden ? "mx-auto w-full max-w-3xl" : ""}>
+		{#if DemoComposer}
+			<DemoComposer />
+		{:else}
 			<Composer bind:this={composerRef} onsend={app.sendMessage} />
-		</div>
+		{/if}
+	</div>
 </div>
 </div>
 

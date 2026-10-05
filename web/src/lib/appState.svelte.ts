@@ -187,6 +187,18 @@ function isTopicNeeded(body: unknown): body is TopicNeededResponse {
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
+/** Executor for the POST /chat payload: normally the api() call itself; the demo binds a precomputed replay so the send pipeline runs unchanged. */
+export type ChatExecutor = (payload: Record<string, unknown>) => Promise<ChatResponse>
+
+let chatExecutor: ChatExecutor | null = null
+
+/**
+ * Registers (or, with null, unregisters) the executor sendMessage uses for its /chat call. Binding keeps demo code out of the send path while letting the demo answer chats from pregenerated content.
+ */
+export function bindChatExecutor(executor: ChatExecutor | null): void {
+	chatExecutor = executor
+}
+
 /** Global UI state: category/topic selection, continuous conversation stream, send + recovery. */
 class AppState {
 	categories = $state<CategorySummary[] | null>(null)
@@ -360,7 +372,8 @@ class AppState {
 	 * autotopic gate response nothing is stored and the draft waits in a candidate picker
 	 * (topicNeeded). Returns true when the send was accepted (or parked for topic
 	 * picking); on failure the optimistic bubble is removed and the caller should restore
-	 * the draft.
+	 * the draft. When a chat executor is bound (demo), the payload goes to it instead of
+	 * the network.
 	 *
 	 * Arrow field on purpose: Svelte 5 compiles bare method references passed as props
 	 * (onsend={app.sendMessage}) into calls on the props object, so a regular method
@@ -396,7 +409,7 @@ class AppState {
 
 		this.sending = true
 		const sentEpoch = this.selectionEpoch
-		const promise = api<ChatResponse>("POST", "/chat", payload)
+		const promise = chatExecutor ? chatExecutor(payload) : api<ChatResponse>("POST", "/chat", payload)
 		let pc: PendingChat = {
 			promise,
 			category: catName,
@@ -508,9 +521,12 @@ class AppState {
 	/**
 	 * Called when the tab becomes visible/focused again. Reconciles a chat request whose
 	 * fetch may have been killed (e.g. iOS backgrounding) by polling the server for the
-	 * persisted reply; otherwise silently refreshes stale categories.
+	 * persisted reply; otherwise silently refreshes stale categories. No-op while a chat
+	 * executor is bound: the demo's pending state is a local replay, with nothing
+	 * server-side to recover.
 	 */
 	async recover(): Promise<void> {
+		if (chatExecutor) return
 		const pc = this.pendingChat
 		if (!pc) {
 			if (Date.now() - this.lastCategoriesLoad > 60_000) {

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { app } from "../lib/appState.svelte"
+import { ui } from "../lib/uiState.svelte"
 import type { TopicSummary } from "../api"
 import FreshnessDot from "./FreshnessDot.svelte"
 import Menu from "./Menu.svelte"
@@ -69,6 +70,7 @@ const moreItems = $derived.by(() => {
 				{topic.name}
 			</button>
 			<FreshnessDot ts={topic.updated_at_timestamp} />
+		{#if ui.canMutate}
 			<Menu
 				label="Topic actions"
 				items={[
@@ -78,17 +80,20 @@ const moreItems = $derived.by(() => {
 			>
 				<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
 			</Menu>
+		{/if}
 		</div>
 	{/each}
-	<button
-		data-overflow-trailing
-		class="flex shrink-0 items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs text-faint transition-colors hover:border-accent/40 hover:text-ink"
-		onclick={() => app.deselectTopic()}
-		title="Start a new topic — the next message gets one automatically"
-	>
-		<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-		New topic
-	</button>
+	{#if ui.canMutate}
+		<button
+			data-overflow-trailing
+			class="flex shrink-0 items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs text-faint transition-colors hover:border-accent/40 hover:text-ink"
+			onclick={() => app.deselectTopic()}
+			title="Start a new topic — the next message gets one automatically"
+		>
+			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+			New topic
+		</button>
+	{/if}
 	<div
 		bind:this={moreEl}
 		data-overflow-trailing

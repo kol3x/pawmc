@@ -8,6 +8,7 @@
 		dismissToast,
 		type ToastKind,
 	} from "./lib/appState.svelte"
+	import { ui } from "./lib/uiState.svelte"
 	import { api, ApiError, errorMessage, type CategorySummary, type TopicSummary } from "./api"
 	import CategoryTabs from "./components/CategoryTabs.svelte"
 	import TopicChips from "./components/TopicChips.svelte"
@@ -19,6 +20,10 @@
 	import Modal from "./components/Modal.svelte"
 
 	initAuth()
+
+	// Demo entry is synchronous so that no real fetch (boot, recovery) can start before the
+	// lazy demo chunk loads; a stored key may coexist with the demo.
+	ui.demoActive = new URLSearchParams(window.location.search).has("demo")
 
 	let settingsOpen = $state(false)
 	let memoryOpen = $state(false)
@@ -72,9 +77,10 @@
 	let booted = false
 
 	$effect(() => {
-		// auth.invalid is read so re-saving a rejected key re-triggers the boot.
+		// auth.invalid is read so re-saving a rejected key re-triggers the boot. The demo
+		// serves fake data through the same paths, so the boot fetch never runs in it.
 		void auth.invalid
-		if (auth.key && !booted) {
+		if (auth.key && !booted && ui.liveData) {
 			booted = true
 			void app
 				.loadCategories()
@@ -90,8 +96,23 @@
 		}
 	})
 
-	// Keep ?category=&topic= in sync with the selection.
+	// One lazy import boots the demo whenever demo mode is on and not ready yet; a load
+	// failure falls back to the normal app/auth screen.
 	$effect(() => {
+		if (!ui.demoActive || ui.demoReady || ui.demoLoading) return
+		ui.demoLoading = true
+		import("./lib/demo/state.svelte")
+			.then((m) => m.startDemo())
+			.catch(() => {
+				ui.demoActive = false
+				pushToast("Demo couldn't load — try again", "error")
+			})
+			.finally(() => (ui.demoLoading = false))
+	})
+
+	// Keep ?category=&topic= in sync with the selection; the demo keeps ?demo=1 untouched.
+	$effect(() => {
+		if (ui.demoActive) return
 		const cat = app.selectedCategory?.name ?? ""
 		const topic = app.selectedTopic?.name ?? ""
 		const params = new URLSearchParams()
@@ -133,7 +154,7 @@
 		return () => window.removeEventListener("keydown", onKey)
 	})
 
-	const showAuth = $derived(auth.key === "" || auth.invalid)
+	const showAuth = $derived(ui.showAuth)
 
 	function renameEntity(
 		title: string,
@@ -228,6 +249,7 @@
 			<div class="flex shrink-0 items-center gap-0.5 pr-2">
 				<button
 					class="icon-btn md:hidden"
+					class:demo-spotlight={ui.spotlightMemory}
 					title="Memory"
 					aria-label="Memory"
 					onclick={() => (memoryOpen = true)}
@@ -243,9 +265,11 @@
 				>
 					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
 				</button>
+			{#if ui.showSettings}
 				<button class="icon-btn" title="Settings" aria-label="Settings" onclick={() => (settingsOpen = true)}>
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 					</button>
+			{/if}
 				</div>
 			</div>
 			{#if app.selectedCategory}
@@ -270,6 +294,13 @@
 		<div class="relative flex w-full flex-col bg-bg shadow-2xl">
 			<MemoryBar onclose={() => (memoryOpen = false)} />
 		</div>
+	</div>
+{/if}
+
+{#if ui.demoActive && !ui.demoReady}
+	<!-- Entry splash while the lazy demo chunk loads; the demo root replaces it. -->
+	<div class="fixed inset-0 z-[80] flex items-center justify-center bg-bg">
+		<p class="text-xs text-faint">Loading demo…</p>
 	</div>
 {/if}
 

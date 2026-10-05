@@ -77,6 +77,20 @@ export interface ApiErrorBody {
 	error: string
 }
 
+/** Serves api() calls from the demo's fake backend; returns the response payload the caller expects. */
+export type DemoRouter = (method: string, path: string, body?: unknown) => Promise<unknown>
+
+let demoRouter: DemoRouter | null = null
+
+/**
+ * Registers (or, with null, unregisters) the demo's fake-API router. While bound, api()
+ * resolves every request through it instead of fetch, so the whole UI runs on demo data
+ * with no backend calls. Kept as a binding, like bindAuth, to avoid a circular import.
+ */
+export function bindDemoRouter(router: DemoRouter | null): void {
+	demoRouter = router
+}
+
 /** Error thrown by api() for non-2xx responses, carrying the HTTP status and the parsed body (e.g. the 422 topic-needed payload). */
 export class ApiError extends Error {
 	status: number
@@ -90,9 +104,11 @@ export class ApiError extends Error {
 }
 
 /**
- * Performs a JSON request against the worker API with Bearer auth, returning the parsed body. Throws ApiError with the server-provided {error} message on failure.
+ * Performs a JSON request against the worker API with Bearer auth, returning the parsed body. Throws ApiError with the server-provided {error} message on failure. When a demo router is bound, the request is answered by it instead of the network.
  */
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+	if (demoRouter) return demoRouter(method, path, body) as T
+
 	const headers: Record<string, string> = {}
 	if (body !== undefined) headers["Content-Type"] = "application/json"
 	if (authHeader()) headers["Authorization"] = authHeader()
