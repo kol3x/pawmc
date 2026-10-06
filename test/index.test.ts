@@ -59,9 +59,11 @@ async function backdateConversations(seconds: number): Promise<void> {
   })
 }
 
-function stubOpenRouter(content: string | string[]): { bodies: Array<{ model?: string; messages: Array<{ role: string; content: string }> }> } {
+type StubBody = { model?: string; provider?: { sort?: string }; messages: Array<{ role: string; content: string }> }
+
+function stubOpenRouter(content: string | string[]): { bodies: StubBody[] } {
   const responses = Array.isArray(content) ? content : [content]
-  const bodies: Array<{ model?: string; messages: Array<{ role: string; content: string }> }> = []
+  const bodies: StubBody[] = []
   const original = globalThis.fetch
   let call = 0
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -76,8 +78,8 @@ function stubOpenRouter(content: string | string[]): { bodies: Array<{ model?: s
   return { bodies }
 }
 
-function stubOpenRouterByPrompt(map: Record<string, string>, fallback = "ok"): { bodies: Array<{ model?: string; messages: Array<{ role: string; content: string }> }> } {
-  const bodies: Array<{ model?: string; messages: Array<{ role: string; content: string }> }> = []
+function stubOpenRouterByPrompt(map: Record<string, string>, fallback = "ok"): { bodies: StubBody[] } {
+  const bodies: StubBody[] = []
   const original = globalThis.fetch
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = input instanceof Request ? input.url : String(input)
@@ -416,8 +418,10 @@ it("generates a new topic when the chat starts without one", async () => {
 
   expect(bodies).toHaveLength(2)
   expect(bodies[0]?.model).toBe("test-model-light")
+  expect(bodies[0]?.provider?.sort).toBe("throughput")
   expect(bodies[0]?.messages.at(-1)?.content).toContain("plan the project kickoff")
   expect(bodies[1]?.model).toBe("test-model")
+  expect(bodies[1]?.provider?.sort).toBe("price")
   expect(bodies[1]?.messages[0]?.content).toContain("qa-autogen / project kickoff")
 })
 
@@ -519,6 +523,7 @@ it("distills a micro summary in a separate call on fold", async () => {
 
   const distillCalls = bodies.filter((b) => b?.model === "test-model-light")
   expect(distillCalls.length).toBeGreaterThan(0)
+  expect(distillCalls[0]?.provider?.sort).toBe("throughput")
 })
 
 it("backfills missing micro summaries on the next summary run", async () => {

@@ -126,17 +126,20 @@ function trimForLabeling(message: string): string {
   return `${message.slice(0, LABEL_TRIM_HEAD)}\n[...]\n${message.slice(-LABEL_TRIM_TAIL)}`
 }
 
+/** OpenRouter provider routing order: `price` picks the cheapest provider, `throughput` the fastest. */
+type OpenRouterProviderSort = "price" | "throughput"
+
 /**
- * Runs the AI model with the given system prompt and user messages. The optional model override applies to the OpenRouter provider only.
+ * Runs the AI model with the given system prompt and user messages. The optional model override applies to the OpenRouter provider only, as does the optional provider sort (default price).
  */
-export async function runAI(env: Env, systemPrompt: string, conversation: AiConversationEntry[], model?: string): Promise<string> {
+export async function runAI(env: Env, systemPrompt: string, conversation: AiConversationEntry[], model?: string, sort?: OpenRouterProviderSort): Promise<string> {
   const messages = [{ role: "system", content: systemPrompt }, ...conversation]
 
   const providerSetting: string = env.AI_PROVIDER || "workers-ai"
   const provider = providerSetting === "openrouter" ? "openrouter" : "workers-ai"
   const res =
     provider === "openrouter"
-      ? await callOpenRouter(env, messages, model)
+      ? await callOpenRouter(env, messages, model, sort)
       : await env.AI.run(env.AI_MODEL_WORKERS_AI, {
           messages: messages as unknown as ChatCompletionMessageParam[],
         })
@@ -155,9 +158,9 @@ export async function runAI(env: Env, systemPrompt: string, conversation: AiConv
 }
 
 /**
- * Calls the OpenRouter API with the provided messages. Prefer the cheapest provider; the optional model override selects a lighter model for cheap calls.
+ * Calls the OpenRouter API with the provided messages, routing through providers in the given order (default price: cheapest first). The optional model override selects a lighter model for cheap calls.
  */
-async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?: string): Promise<unknown> {
+async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?: string, sort: OpenRouterProviderSort = "price"): Promise<unknown> {
   const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -169,7 +172,7 @@ async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?:
     body: JSON.stringify({
       model: model || env.AI_MODEL_OPENROUTER,
       messages,
-      provider: { sort: "price" },
+      provider: { sort },
     }),
   })
   if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
@@ -177,12 +180,12 @@ async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?:
 }
 
 /**
- * Runs the labeling model: the configured light OpenRouter model, or the workers-ai model when the provider is workers-ai. Labeling and distillation only need cheap classification quality.
+ * Runs the labeling model: the configured light OpenRouter model, or the workers-ai model when the provider is workers-ai. Labeling and distillation only need cheap classification quality. OpenRouter labeling routes by throughput since these calls sit on the interactive chat path.
  */
 async function runLabeler(env: Env, systemPrompt: string, userMessage: string): Promise<string> {
   const providerSetting: string = env.AI_PROVIDER || "workers-ai"
   const model = providerSetting === "openrouter" ? env.AI_MODEL_OPENROUTER_LIGHT : env.AI_MODEL_WORKERS_AI
-  return runAI(env, systemPrompt, [{ role: "user", content: userMessage }], model)
+  return runAI(env, systemPrompt, [{ role: "user", content: userMessage }], model, "throughput")
 }
 
 /**
