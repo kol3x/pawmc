@@ -214,6 +214,8 @@ class AppState {
 	pendingChat = $state<PendingChat | null>(null)
 	/** In-flight post-send categories/stream refresh; next sends serialize behind it. */
 	refreshPromise: Promise<void> | null = null
+	/** In-flight /categories fetch; concurrent callers join it instead of stacking duplicate requests. */
+	categoriesLoad: Promise<void> | null = null
 	lastCategoriesLoad = 0
 	/** Bumped on every user-driven selection change; background refreshes abort when it moves so they cannot override navigation. */
 	selectionEpoch = 0
@@ -228,13 +230,24 @@ class AppState {
 	)
 
 	/**
-	 * Fetches categories and keeps (or restores) a valid selection.
+	 * Fetches categories and keeps (or restores) a valid selection. Concurrent callers
+	 * share one fetch; pass force to bypass a join when the caller needs a snapshot that
+	 * reflects a just-completed mutation (post-send refresh, renames, deletes, recovery).
 	 */
-	async loadCategories(): Promise<void> {
-		const cats = await api<CategorySummary[]>("GET", "/categories")
-		this.categories = cats
-		this.lastCategoriesLoad = Date.now()
-		this.retainSelection()
+	async loadCategories(force = false): Promise<void> {
+		if (!force && this.categoriesLoad) return this.categoriesLoad
+		const load = (async () => {
+			const cats = await api<CategorySummary[]>("GET", "/categories")
+			this.categories = cats
+			this.lastCategoriesLoad = Date.now()
+			this.retainSelection()
+		})()
+		this.categoriesLoad = load
+		try {
+			await load
+		} finally {
+			if (this.categoriesLoad === load) this.categoriesLoad = null
+		}
 	}
 
 	/**
@@ -475,7 +488,7 @@ class AppState {
 	 */
 	async refreshAfterChat(res: ChatResponse, sentCategory: string, sentEpoch: number): Promise<void> {
 		try {
-			await this.loadCategories()
+			await this.loadCategories(true)
 			if (this.selectionEpoch !== sentEpoch) return
 			if (res.topicId != null && res.topicId !== this.topicId) {
 				this.selectTopicById(res.topicId)
@@ -575,7 +588,7 @@ class AppState {
 				const answered = messages.at(-1)?.role === "assistant"
 				if (!ours || !answered) continue
 				if (this.selectionEpoch !== epoch) return true
-				await this.loadCategories()
+				await this.loadCategories(true)
 				if (!pc.topic) {
 					// Autogen may have picked any topic in the category; follow the reply.
 					const cat = this.categories?.find((c) => c.id === this.categoryId)

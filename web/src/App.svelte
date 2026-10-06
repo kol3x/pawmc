@@ -168,8 +168,8 @@
 	function onRenameCategory(cat: CategorySummary) {
 		renameEntity("Rename diary", cat.name, async (name) => {
 			try {
-				await api("POST", "/rename-category", { id: cat.id, name })
-				await app.loadCategories()
+			await api("POST", "/rename-category", { id: cat.id, name })
+			await app.loadCategories(true)
 				pushToast("Diary renamed", "success")
 			} catch (err) {
 				pushApiError(err, "rename")
@@ -180,8 +180,8 @@
 	function onRenameTopic(topic: TopicSummary) {
 		renameEntity("Rename topic", topic.name, async (name) => {
 			try {
-				await api("POST", "/rename-topic", { id: topic.id, name })
-				await app.loadCategories()
+			await api("POST", "/rename-topic", { id: topic.id, name })
+			await app.loadCategories(true)
 				pushToast("Topic renamed", "success")
 			} catch (err) {
 				pushApiError(err, "rename")
@@ -196,7 +196,7 @@
 			confirm: async () => {
 				try {
 					await api("DELETE", `/category?id=${cat.id}`)
-					await app.loadCategories()
+					await app.loadCategories(true)
 					await app.loadStream()
 					pushToast("Diary deleted", "success")
 				} catch (err) {
@@ -213,7 +213,7 @@
 			confirm: async () => {
 				try {
 					await api("DELETE", `/topic?id=${topic.id}`)
-					await app.loadCategories()
+					await app.loadCategories(true)
 					await app.loadStream()
 					pushToast("Topic deleted", "success")
 				} catch (err) {

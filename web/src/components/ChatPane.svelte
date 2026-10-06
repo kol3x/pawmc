@@ -62,7 +62,7 @@ async function deleteConversation() {
 	try {
 		await api("DELETE", `/conversation?id=${group.id}`)
 		await app.loadStream()
-		await app.loadCategories()
+		await app.loadCategories(true)
 	} catch (err) {
 		pushToast(`Couldn't delete conversation — ${errorMessage(err)}`, "error")
 	}

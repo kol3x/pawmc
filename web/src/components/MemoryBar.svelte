@@ -49,7 +49,7 @@ async function saveEdit(card: MemoryCard) {
 	try {
 		await api("POST", "/update-summary", { type: card.type, id: card.id, summary: editText.trim() })
 		editing = null
-		await app.loadCategories()
+		await app.loadCategories(true)
 		pushToast("Memory updated", "success")
 	} catch (err) {
 		pushToast(`Couldn't update memory — ${errorMessage(err)}`, "error")
@@ -61,7 +61,7 @@ async function forget(card: MemoryCard) {
 	if (!card.id) return
 	try {
 		await api("POST", "/update-summary", { type: card.type, id: card.id, summary: "" })
-		await app.loadCategories()
+		await app.loadCategories(true)
 		pushToast("Memory cleared", "success")
 	} catch (err) {
 		pushToast(`Couldn't clear memory — ${errorMessage(err)}`, "error")
@@ -72,7 +72,7 @@ async function refreshAll() {
 	refreshing = true
 	try {
 		await api("POST", "/update-summaries")
-		await app.loadCategories()
+		await app.loadCategories(true)
 		pushToast("Memory refreshed", "success")
 	} catch (err) {
 		pushToast(`Couldn't refresh memory — ${errorMessage(err)}`, "error")
