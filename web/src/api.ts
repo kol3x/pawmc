@@ -123,7 +123,9 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
 	try {
 		data = await res.json()
 	} catch {
-		// Non-JSON error bodies keep the generic message below.
+		// A non-JSON body on a 2xx response would surface as a silent null to callers, so
+		// throw instead. Non-JSON error bodies keep the generic message below.
+		if (res.ok) throw new ApiError(res.status, "Malformed response: body was not JSON")
 	}
 
 	if (!res.ok) {
