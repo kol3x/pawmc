@@ -307,7 +307,7 @@
 <SettingsModal open={settingsOpen} onclose={() => (settingsOpen = false)} />
 
 {#if promptConfig}
-	<Modal title={promptConfig.title} onclose={() => (promptConfig = null)}>
+	<Modal open title={promptConfig.title} onclose={() => (promptConfig = null)}>
 		<form class="flex flex-col gap-3" onsubmit={submitPrompt}>
 			<input
 				bind:this={promptInputEl}
