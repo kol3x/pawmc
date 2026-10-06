@@ -108,7 +108,7 @@ The project ships a test suite that runs the worker with its Durable Object and 
 
 ```sh
 npm install
-npm run typecheck   # typechecks src and test
+npm run worker-typecheck   # typechecks src and test
 npm test            # runs the suite in test/index.test.ts
 ```
 
@@ -122,7 +122,7 @@ npm run dev -w web # terminal 2: vite dev server on :5173, proxies API calls to 
 ```
 
 ```sh
-npm run check -w web   # svelte-check over the UI
+npm run svelte-check   # svelte-check over the UI
 npm run build -w web   # production build to web/dist
 ```
 
