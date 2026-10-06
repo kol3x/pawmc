@@ -24,3 +24,15 @@ export function relativeTime(ts: number, now: number = Date.now() / 1000): strin
 	if (age < 86400 * 30) return `${Math.floor(age / 86400)}d ago`
 	return new Date(ts * 1000).toLocaleDateString()
 }
+
+/**
+ * Orders strip entries most recently updated first (summary freshness) and pins the
+ * selected entry to the front so its controls stay reachable when the row overflows.
+ */
+export function freshnessOrderWithSelected<
+	T extends { id: number; updated_at_timestamp: number },
+>(items: readonly T[], selectedId: number | null): T[] {
+	const sorted = [...items].sort((a, b) => b.updated_at_timestamp - a.updated_at_timestamp)
+	const selected = selectedId == null ? undefined : sorted.find((t) => t.id === selectedId)
+	return selected ? [selected, ...sorted.filter((t) => t !== selected)] : sorted
+}

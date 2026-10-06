@@ -5,6 +5,7 @@ import type { CategorySummary } from "../api"
 import FreshnessDot from "./FreshnessDot.svelte"
 import Menu from "./Menu.svelte"
 import { createOverflowSplit } from "../lib/overflow.svelte"
+import { freshnessOrderWithSelected } from "../lib/freshness"
 
 interface Props {
 	onrenamecategory: (cat: CategorySummary) => void
@@ -14,7 +15,8 @@ interface Props {
 /**
  * Diary tab strip: diaries are the base of the interface — always visible and
  * selectable, with tabs past the strip's width collapsing into an edge overflow
- * dropdown. The plus chip reveals an inline name input; Enter stages a ghost tab
+ * dropdown. Tabs are ordered most recently updated first (summary freshness).
+ * The plus chip reveals an inline name input; Enter stages a ghost tab
  * (dashed, not yet saved) that becomes real when the first message is sent.
  * The active diary is pinned to the front so it never hides behind the dropdown.
  */
@@ -43,12 +45,11 @@ function cancelNew() {
 	newName = ""
 }
 
-// Selected diary first so its rename/delete kebab stays reachable when the strip overflows.
-const orderedCategories = $derived.by(() => {
-	const cats = app.categories ?? []
-	const selected = cats.find((c) => c.id === app.categoryId)
-	return selected ? [selected, ...cats.filter((c) => c !== selected)] : cats
-})
+// Selected diary first so its rename/delete kebab stays reachable when the strip overflows;
+// otherwise most recently updated first, matching the topic chips' freshness order.
+const orderedCategories = $derived.by(() =>
+	freshnessOrderWithSelected(app.categories ?? [], app.categoryId),
+)
 
 const overflow = createOverflowSplit({
 	deps: () => {

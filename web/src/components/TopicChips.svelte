@@ -5,6 +5,7 @@ import type { TopicSummary } from "../api"
 import FreshnessDot from "./FreshnessDot.svelte"
 import Menu from "./Menu.svelte"
 import { createOverflowSplit } from "../lib/overflow.svelte"
+import { freshnessOrderWithSelected } from "../lib/freshness"
 
 interface Props {
 	onrenametopic: (topic: TopicSummary) => void
@@ -23,12 +24,9 @@ let rowEl = $state<HTMLElement | null>(null)
 let moreEl = $state<HTMLElement | null>(null)
 
 // Selected topic first so its rename/delete kebab stays reachable when the row overflows.
-const orderedTopics = $derived.by(() => {
-	const topics = app.selectedCategory?.topics ?? []
-	const sorted = [...topics].sort((a, b) => b.updated_at_timestamp - a.updated_at_timestamp)
-	const selected = sorted.find((t) => t.id === app.topicId)
-	return selected ? [selected, ...sorted.filter((t) => t !== selected)] : sorted
-})
+const orderedTopics = $derived.by(() =>
+	freshnessOrderWithSelected(app.selectedCategory?.topics ?? [], app.topicId),
+)
 
 const overflow = createOverflowSplit({
 	deps: () => {
