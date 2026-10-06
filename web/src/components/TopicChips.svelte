@@ -58,18 +58,18 @@ const moreItems = $derived.by(() => {
 	{#each orderedTopics as topic, i (topic.id)}
 		<div
 			data-overflow-item
-			class="flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors {app.topicId === topic.id
+			class="flex shrink-0 items-center gap-1 rounded-full border py-1 text-xs transition-colors {ui.canMutate ? 'pr-1' : 'pr-2.5'} {app.topicId === topic.id
 				? 'border-accent/50 bg-accent-soft text-accent'
 				: 'border-line text-dim hover:border-accent/40 hover:text-ink'} {overflow.breakIndex !== null && i >= overflow.breakIndex ? 'hidden' : ''}"
 		>
 			<button
-				class="max-w-48 truncate"
+				class="flex items-center gap-1.5 self-stretch pl-2.5"
 				onclick={() => app.selectTopic(app.categoryId!, topic.id)}
 				title={topic.micro_summary || topic.summary || topic.name}
 			>
-				{topic.name}
+				<span class="max-w-48 truncate">{topic.name}</span>
+				<FreshnessDot ts={topic.updated_at_timestamp} />
 			</button>
-			<FreshnessDot ts={topic.updated_at_timestamp} />
 		{#if ui.canMutate}
 			<Menu
 				label="Topic actions"

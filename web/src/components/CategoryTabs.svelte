@@ -84,12 +84,12 @@ const moreItems = $derived.by(() => {
 		{#each orderedCategories as cat, i (cat.id)}
 			<div
 				data-overflow-item
-				class="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 transition-colors {app.categoryId === cat.id
+				class="flex shrink-0 items-center gap-1 rounded-lg py-1.5 transition-colors {ui.canMutate ? 'pr-1' : 'pr-2.5'} {app.categoryId === cat.id
 					? 'bg-accent-soft text-accent'
 					: 'text-dim hover:bg-panel-2 hover:text-ink'} {overflow.breakIndex !== null && i >= overflow.breakIndex ? 'hidden' : ''}"
 			>
 				<button
-					class="flex items-center gap-1.5 text-sm font-medium"
+					class="flex items-center gap-1.5 self-stretch pl-2.5 text-sm font-medium"
 					onclick={() => app.selectCategory(cat.id)}
 					title={cat.name}
 					role="tab"
