@@ -21,6 +21,7 @@
 		"AI_PROVIDER": "openrouter",
 		"AI_MODEL_WORKERS_AI": "@cf/google/gemma-4-26b-a4b-it",
 		"AI_MODEL_OPENROUTER": "test-model",
+		"AI_MODEL_OPENROUTER_LIGHT": "test-model-light",
 		"AI_SYSTEM_INSTRUCTION": "User values succinct and direct outputs.",
 		"OPENROUTER_API_KEY": "test-openrouter-key"
 	},

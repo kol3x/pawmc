@@ -17,5 +17,6 @@
     "useUnknownInCatchVariables": true,
     "lib": ["ES2022", "ESNext.Disposable"],
     "types": ["@cloudflare/vitest-plugin/types"]
-  }
+  },
+"exclude": ["web", "temp"]
 }

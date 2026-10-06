@@ -15,5 +15,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
+      - run: npm run svelte-check
+      - run: npm run build -w web
+      - run: npm run worker-typecheck
       - run: npm test

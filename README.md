@@ -108,11 +108,23 @@ The project ships a test suite that runs the worker with its Durable Object and 
 
 ```sh
 npm install
-npm run typecheck   # typechecks src and test
+npm run worker-typecheck   # typechecks src and test
 npm test            # runs the suite in test/index.test.ts
 ```
 
 Pushes to `main` and pull requests run both commands via the `CI` workflow before the `Deploy` workflow can ship anything.
+
+The web interface is a Vite + Svelte 5 app in `web/`, built to `web/dist` and served by the worker's static assets. `npm run dev` builds the UI and starts the worker; to iterate on the UI, run a second terminal with the dev server and live reload:
+
+```sh
+npm run dev        # terminal 1: builds web/dist, starts wrangler dev on :8787
+npm run dev -w web # terminal 2: vite dev server on :5173, proxies API calls to :8787
+```
+
+```sh
+npm run svelte-check   # svelte-check over the UI
+npm run build -w web   # production build to web/dist
+```
 
 ## Free Tier Cloudflare Workers Limits
 
