@@ -1,7 +1,7 @@
 import { mount } from "svelte"
 import { app, bindChatExecutor, type ChatExecutor } from "../appState.svelte"
 import { ui } from "../uiState.svelte"
-import { ApiError, bindDemoRouter } from "../../api"
+import { ApiError, toggleDemoRouterBind } from "../../api"
 import type { CategorySummary, ChatMessage, ChatResponse, TopicStreamEntry, TopicSummary } from "../../api"
 import DemoRoot from "../../components/demo/DemoRoot.svelte"
 import { demoScript } from "./script.generated"
@@ -349,7 +349,7 @@ function seedDb(): void {
  * is already set by the time this runs; this only wires the demo itself.
  */
 export async function startDemo(): Promise<void> {
-	bindDemoRouter(demoRouter)
+	toggleDemoRouterBind(demoRouter)
 	bindChatExecutor(demoChatExecutor)
 	seedDb()
 	await app.loadCategories()
