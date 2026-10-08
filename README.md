@@ -6,6 +6,11 @@ When starting a new conversation, choose which historical context you want it to
 
 It's simple and lightweight, and you own your data, pick your model, and control the prompts.
 
+## Related posts
+
+- [Dear LLM, or how I stopped getting generic advice](https://kol3x.com/blog/dear-llm-or-how-i-stopped-getting-generic-advice/) — the story behind Pawmc
+- [Making LLMs not eat my food, or how I picked up TS](https://kol3x.com/blog/making-llms-not-eat-my-food-or-how-i-picked-up-ts/) — on migrating Pawmc to TS
+
 ## Key advantages
 
 ### Compounding context that works
@@ -102,36 +107,3 @@ To switch back, set `AI_PROVIDER` back to `"workers-ai"`.
 
 When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and the action will redeploy automatically.
 
-## Development
-
-The project ships a test suite that runs the worker with its Durable Object and SQLite storage locally (no Cloudflare account or network access needed — AI calls are mocked).
-
-```sh
-npm install
-npm run worker-typecheck   # typechecks src and test
-npm test            # runs the suite in test/index.test.ts
-```
-
-Pushes to `main` and pull requests run both commands via the `CI` workflow before the `Deploy` workflow can ship anything.
-
-The web interface is a Vite + Svelte 5 app in `web/`, built to `web/dist` and served by the worker's static assets. `npm run dev` builds the UI and starts the worker; to iterate on the UI, run a second terminal with the dev server and live reload:
-
-```sh
-npm run dev        # terminal 1: builds web/dist, starts wrangler dev on :8787
-npm run dev -w web # terminal 2: vite dev server on :5173, proxies API calls to :8787
-```
-
-```sh
-npm run svelte-check   # svelte-check over the UI
-npm run build -w web   # production build to web/dist
-```
-
-## Free Tier Cloudflare Workers Limits
-
-| Resource | Limit |
-|----------|-------|
-| Workers Requests | 100,000/day |
-| Workers AI | 10,000 neurons/day |
-| SQLite Row Reads | 5 million/day |
-| SQLite Row Writes | 100,000/day |
-| Cron Triggers | 5/account |
