@@ -43,21 +43,7 @@ Deploying and hosting Pawmc on Cloudflare is way under their free tier limits, a
 
 ## Setup
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kol3x/pawmc)
-
-1. Click the button and connect your GitHub and Cloudflare accounts.
-2. In the deploy form, pick a worker name and set `API_KEY` — invent a password, you will enter it in the web app to log in.
-3. Leave the remaining fields at their defaults, click **Deploy**, and wait for the build to finish.
-4. Copy the worker URL shown after the deploy (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
-
-The button also creates your own copy of this repository on GitHub and wires up automatic deploys: every push to `main` rebuilds and redeploys your worker.
-
-## Advanced: template setup with easy updates
-
-The deploy button creates a detached copy of the code. If you want your deployment to stay in sync with the template — updating to the latest version is a one-click **Sync fork** (see [Getting updates](#getting-updates)) — use this flow instead. No API tokens or GitHub secrets are needed: you connect your repository to Cloudflare directly.
-
-<details>
-<summary>Setup steps</summary>
+Your repository stays linked to the template, so updating to the latest version is a one-click **Sync fork** (see [Getting updates](#getting-updates)). 
 
 ### 1. Create your own copy
 
@@ -72,17 +58,14 @@ Go to [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and cre
 1. In the Cloudflare dashboard, go to **Workers & Pages** → **Create application** → **Get started** next to **Import a repository**
 2. Under **Git account**, select GitHub and authorize it
 3. Select your repository and the `main` branch
-4. Set the **build command** to `npm run build -w web` (the deploy command can stay `npx wrangler deploy`) — without it the first build fails, because the web app isn't compiled yet
-5. Open **Advanced settings** and add a variable named `API_KEY` with your login password — tick **Encrypt** so it is stored as a secret (add `OPENROUTER_API_KEY` the same way if you already have an OpenRouter key)
-6. Leave the remaining fields at their defaults, click **Save and Deploy**, and wait for the build to finish (a couple of minutes on the first run)
+4. Open **Advanced settings** and add a variable named `API_KEY` with your login password — tick **Encrypt** so it is stored as a secret (add `OPENROUTER_API_KEY` the same way if you already have an OpenRouter key)
+5. Leave the remaining fields at their defaults, click **Save and Deploy**, and wait for the build to finish (a couple of minutes on the first run)
 
-If the first build fails, check the two points above — build command set and `API_KEY` added with **Encrypt** — and click **Retry build**.
+If the first build fails, check that `API_KEY` was added with **Encrypt** and click **Retry build**.
 
 ### 4. Open your worker
 
 Copy the worker URL from the dashboard (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
-
-</details>
 
 ## Advanced: Use OpenRouter instead of Workers AI
 
