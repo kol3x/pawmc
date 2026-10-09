@@ -72,7 +72,13 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     const authHeader = request.headers.get("Authorization")
     const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null
-    if (!apiKey || apiKey !== env.API_KEY || !env.API_KEY) {
+    if (!env.API_KEY) {
+      return Response.json(
+        { error: "API_KEY is not configured on this worker. Add it in the Cloudflare dashboard under Settings > Variables and Secrets, then reload." },
+        { status: 401 },
+      )
+    }
+    if (!apiKey || apiKey !== env.API_KEY) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 

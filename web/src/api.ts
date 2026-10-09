@@ -129,7 +129,10 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
 	}
 
 	if (!res.ok) {
-		if (res.status === 401) markUnauthorized()
+		if (res.status === 401) {
+			const serverMessage = (data as ApiErrorBody | null)?.error
+			markUnauthorized(serverMessage && serverMessage !== "Unauthorized" ? serverMessage : undefined)
+		}
 		const message = (data as ApiErrorBody | null)?.error || `Request failed (${res.status})`
 		throw new ApiError(res.status, message, data)
 	}
@@ -153,12 +156,12 @@ export function errorMessage(err: unknown): string {
 }
 
 let authKey: () => string = () => ""
-let markUnauthorized: () => void = () => {}
+let markUnauthorized: (message?: string) => void = () => {}
 
 /**
- * Registers the auth state accessors so api() can attach the Bearer header and flag 401s without a circular import.
+ * Registers the auth state accessors so api() can attach the Bearer header and flag 401s without a circular import. The 401 callback receives the server's error message when it carries actionable detail (e.g. the key not being configured on the worker), absent for a plain wrong-key rejection.
  */
-export function bindAuth(keyGetter: () => string, onUnauthorized: () => void) {
+export function bindAuth(keyGetter: () => string, onUnauthorized: (message?: string) => void) {
 	authKey = keyGetter
 	markUnauthorized = onUnauthorized
 }

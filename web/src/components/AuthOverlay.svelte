@@ -28,7 +28,7 @@ async function submit(e: SubmitEvent) {
 			</div>
 			<h1 class="text-lg font-semibold">pawmc</h1>
 			<p class="mt-1 text-xs text-dim">
-				{auth.invalid ? "API key rejected — check it and try again" : "Enter your API key to continue"}
+				{auth.invalid ? (auth.invalidMessage || "API key rejected — check it and try again") : "Enter your API key to continue"}
 			</p>
 		</div>
 		<input

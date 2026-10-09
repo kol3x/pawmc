@@ -11,6 +11,7 @@ import worker, {
   type TopicRow,
   type TopicStreamEntry,
 } from "../src/index"
+import { handleRequest } from "../src/routes"
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -102,6 +103,7 @@ afterEach(() => {
 it("rejects requests without an api key", async () => {
   const response = await exports.default.fetch(new Request("https://example.com/categories"))
   expect(response.status).toBe(401)
+  expect(((await response.json()) as { error: string }).error).toBe("Unauthorized")
 })
 
 it("rejects requests with a wrong api key", async () => {
@@ -109,6 +111,16 @@ it("rejects requests with a wrong api key", async () => {
     new Request("https://example.com/categories", { headers: { Authorization: "Bearer nope" } }),
   )
   expect(response.status).toBe(401)
+  expect(((await response.json()) as { error: string }).error).toBe("Unauthorized")
+})
+
+it("explains when the api key is not configured on the worker", async () => {
+  const response = await handleRequest(new Request("https://example.com/categories"), {
+    ASSISTANT_DO: env.ASSISTANT_DO,
+    API_KEY: "",
+  } as unknown as Env)
+  expect(response.status).toBe(401)
+  expect(((await response.json()) as { error: string }).error).toContain("not configured")
 })
 
 it("returns 404 for unknown routes", async () => {
