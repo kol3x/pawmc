@@ -47,7 +47,7 @@ Deploying and hosting Pawmc on Cloudflare is way under their free tier limits, a
 
 1. Click the button and connect your GitHub and Cloudflare accounts.
 2. In the deploy form, pick a worker name and set `API_KEY` — invent a password, you will enter it in the web app to log in.
-3. Click **Deploy** and wait for the build to finish (a couple of minutes on the first run).
+3. Leave the remaining fields at their defaults, click **Deploy**, and wait for the build to finish.
 4. Copy the worker URL shown after the deploy (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
 
 The button also creates your own copy of this repository on GitHub and wires up automatic deploys: every push to `main` rebuilds and redeploys your worker.
@@ -74,7 +74,7 @@ Go to [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and cre
 3. Select your repository and the `main` branch
 4. Set the **build command** to `npm run build -w web` (the deploy command can stay `npx wrangler deploy`) — without it the first build fails, because the web app isn't compiled yet
 5. Open **Advanced settings** and add a variable named `API_KEY` with your login password — tick **Encrypt** so it is stored as a secret (add `OPENROUTER_API_KEY` the same way if you already have an OpenRouter key)
-6. Click **Save and Deploy** and wait for the build to finish (a couple of minutes on the first run)
+6. Leave the remaining fields at their defaults, click **Save and Deploy**, and wait for the build to finish (a couple of minutes on the first run)
 
 If the first build fails, check the two points above — build command set and `API_KEY` added with **Encrypt** — and click **Retry build**.
 
