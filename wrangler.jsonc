@@ -25,7 +25,6 @@
 			"0 0 * * *"
 		]
 	},
-	"secrets": { "required": ["API_KEY"] },
 	"observability": {
 		"enabled": true
 	},

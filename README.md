@@ -58,12 +58,15 @@ Go to [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and cre
 1. In the Cloudflare dashboard, go to **Workers & Pages** → **Create application** → **Get started** next to **Import a repository**
 2. Under **Git account**, select GitHub and authorize it
 3. Select your repository and the `main` branch
-4. Open **Advanced settings** and add a variable named `API_KEY` with your login password — tick **Encrypt** so it is stored as a secret (add `OPENROUTER_API_KEY` the same way if you already have an OpenRouter key)
-5. Leave the remaining fields at their defaults, click **Save and Deploy**, and wait for the build to finish (a couple of minutes on the first run)
+4. Leave the remaining fields at their defaults, click **Save and Deploy**, and wait for the build to finish (a couple of minutes on the first run)
 
-If the first build fails, check that `API_KEY` was added with **Encrypt** and click **Retry build**.
+### 4. Set your API key
 
-### 4. Open your worker
+1. In the Cloudflare dashboard, open your worker and go to **Settings** → **Variables and Secrets**
+2. Add a variable named `API_KEY` with your login password — mark it as a **Secret** so it is stored encrypted (add `OPENROUTER_API_KEY` the same way if you already have an OpenRouter key)
+3. The change takes effect on save
+
+### 5. Open your worker
 
 Copy the worker URL from the dashboard (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
 

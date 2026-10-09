@@ -50,6 +50,8 @@ class AuthState {
 	key = $state("")
 	/** Set when a request was rejected with 401 while a key was configured. */
 	invalid = $state(false)
+	/** Server-provided explanation for the 401 (e.g. key not configured on the worker), shown by the auth overlay when present. */
+	invalidMessage = $state("")
 }
 
 export const auth = new AuthState()
@@ -61,8 +63,11 @@ export function initAuth(): void {
 	auth.key = localStorage.getItem(STORAGE_KEY) ?? ""
 	bindAuth(
 		() => auth.key,
-		() => {
-			if (auth.key) auth.invalid = true
+		(message?: string) => {
+			if (auth.key) {
+				auth.invalid = true
+				auth.invalidMessage = message ?? ""
+			}
 		},
 	)
 }
@@ -129,6 +134,7 @@ export function setTheme(pref: ThemePref): void {
 export function saveKey(key: string): void {
 	auth.key = key.trim()
 	auth.invalid = false
+	auth.invalidMessage = ""
 	if (auth.key) localStorage.setItem(STORAGE_KEY, auth.key)
 	else localStorage.removeItem(STORAGE_KEY)
 }
