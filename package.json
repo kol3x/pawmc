@@ -12,7 +12,8 @@
 		"start": "npm run dev",
 		"test": "vitest run",
 		"worker-typecheck": "tsc --noEmit",
-		"svelte-check": "npm run check -w web"
+		"svelte-check": "npm run check -w web",
+		"gen:demo": "node scripts/gen-demo.mjs"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-plugin": "1.1.11",
