@@ -54,12 +54,12 @@ Deploying and hosting Pawmc on Cloudflare is way under their free tier limits, a
 
 The button also creates your own copy of this repository on GitHub and wires up automatic deploys: every push to `main` rebuilds and redeploys your worker.
 
-## Advanced: manual setup with GitHub Actions
+## Advanced: template setup with easy updates
 
-Prefer explicit control over deploys instead of the one-click flow? The repository ships a **Deploy** workflow that builds and deploys on every push to `main`.
+The deploy button creates a detached copy of the code. If you want your deployment to stay in sync with the template — updating to the latest version is a one-click **Sync fork** (see [Getting updates](#getting-updates)) — use this flow instead. No API tokens or GitHub secrets are needed: you connect your repository to Cloudflare directly.
 
 <details>
-<summary>Manual setup steps</summary>
+<summary>Setup steps</summary>
 
 ### 1. Create your own copy
 
@@ -69,42 +69,20 @@ Click **"Use this template"** on the [GitHub repo](https://github.com/kol3x/Pawm
 
 Go to [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and create a free account. No credit card required.
 
-### 3. Create an API token
+### 3. Connect your repository to Cloudflare
 
-1. Go to [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Click **Create Token**
-3. Click **Use template** next to "Edit Cloudflare Workers"
-4. Under **Account Resources**, select your account
-5. Click **Continue to summary**, then **Create Token**
-6. Copy the token — you'll need it in the next step
+1. In the Cloudflare dashboard, go to **Workers & Pages** → **Create application** → **Get started** next to **Import a repository**
+2. Under **Git account**, select GitHub and authorize it
+3. Select your repository and the `main` branch
+4. Set the **build command** to `npm run build -w web` (the deploy command can stay `npx wrangler deploy`) — without it the first build fails, because the web app isn't compiled yet
+5. Open **Advanced settings** and add a variable named `API_KEY` with your login password — tick **Encrypt** so it is stored as a secret (add `OPENROUTER_API_KEY` the same way if you already have an OpenRouter key)
+6. Click **Save and Deploy** and wait for the build to finish (a couple of minutes on the first run)
 
-### 4. Add secrets to GitHub
+If the first build fails, check the two points above — build command set and `API_KEY` added with **Encrypt** — and click **Retry build**.
 
-In your new GitHub repository:
+### 4. Open your worker
 
-1. Go to **Settings → Secrets and variables → Actions**
-2. Click **New repository secret**
-3. Add these two secrets:
-
-| Name | Value |
-|------|-------|
-| `CLOUDFLARE_API_TOKEN` | The API token you created in step 3 |
-| `API_KEY` | A secret password of your choice (you'll enter this in the web app to log in) |
-
-### 5. Deploy
-
-1. In your GitHub repository click the **Actions** tab
-1. Select the **Deploy** workflow from the left sidebar
-1. Under three dots button on the right choose **Run workflow** option
-
-Once deployed, you can put together a link to your worker, based on the email you used to register on Cloudflare, like in the example below.  
-
-```
-replaceme@gmail.com => 
-https://pawmc.replaceme.workers.dev
-```
-
-Open that URL, enter your `API_KEY` and start chatting.
+Copy the worker URL from the dashboard (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
 
 </details>
 
