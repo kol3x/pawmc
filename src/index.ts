@@ -93,6 +93,7 @@ export interface Env extends Cloudflare.Env {
    */
   AI_PROVIDER?: string
   AI_MODEL_WORKERS_AI?: string
+  AI_MODEL_OPENROUTER?: string
   AI_MODEL_OPENROUTER_LIGHT?: string
   AI_SYSTEM_INSTRUCTION?: string
 }

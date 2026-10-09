@@ -1,5 +1,2 @@
 # Login password for the web app. You will enter it to log in.
 API_KEY=
-
-# Optional: paste an OpenRouter API key to use OpenRouter instead of the free Workers AI.
-OPENROUTER_API_KEY=

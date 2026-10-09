@@ -1,4 +1,4 @@
-# Pawmc: Private Assistant with Managed Context
+# pawmc: Private Assistant with Managed Context
 
 A personal LLM assistant that runs on Cloudflare Workers and maintains a user-guided compounding knowledge base across conversations. 
 
@@ -8,8 +8,8 @@ It's simple and lightweight, and you own your data, pick your model, and control
 
 ## Related posts
 
-- [Dear LLM, or how I stopped getting generic advice](https://kol3x.com/blog/dear-llm-or-how-i-stopped-getting-generic-advice/) — the story behind Pawmc
-- [Making LLMs not eat my food, or how I picked up TS](https://kol3x.com/blog/making-llms-not-eat-my-food-or-how-i-picked-up-ts/) — on migrating Pawmc to TS
+- [Dear LLM, or how I stopped getting generic advice](https://kol3x.com/blog/dear-llm-or-how-i-stopped-getting-generic-advice/) — the story behind pawmc
+- [Making LLMs not eat my food, or how I picked up TS](https://kol3x.com/blog/making-llms-not-eat-my-food-or-how-i-picked-up-ts/) — on migrating pawmc to TS
 
 ## Key advantages
 
@@ -46,9 +46,7 @@ Deploying and hosting Pawmc on Cloudflare is way under their free tier limits, a
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kol3x/pawmc)
 
 1. Click the button and connect your GitHub and Cloudflare accounts.
-2. In the deploy form, pick a worker name and fill in the secrets:
-   - `API_KEY` — invent a password, you will enter it in the web app to log in.
-   - `OPENROUTER_API_KEY` — leave empty unless you already have an OpenRouter key (see the OpenRouter section below).
+2. In the deploy form, pick a worker name and set `API_KEY` — invent a password, you will enter it in the web app to log in.
 3. Click **Deploy** and wait for the build to finish (a couple of minutes on the first run).
 4. Copy the worker URL shown after the deploy (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
 
@@ -88,17 +86,17 @@ Copy the worker URL from the dashboard (it looks like `https://pawmc.your-subdom
 
 ## Advanced: Use OpenRouter instead of Workers AI
 
-By default, Pawmc uses Cloudflare Workers AI (free, no extra setup). However, Workers AI can be unreliable and is only ok for testing out the project. If you are planning to use it extensively, I recommend switching to [OpenRouter](https://openrouter.ai), which is also supported.
+By default, pawmc uses Cloudflare Workers AI (free, no extra setup). However, Workers AI can be unreliable and is only ok for testing out the project. If you are planning to use it extensively, I recommend switching to [OpenRouter](https://openrouter.ai), which is also supported.
 
-The provider is picked automatically: with an OpenRouter key set, Pawmc uses OpenRouter; without one, it uses Workers AI. There is no provider flag to flip.
+The provider is picked automatically: with an OpenRouter key set, Pawmc uses OpenRouter; without one, it uses Workers AI. 
 
-Note that OpenRouter is pay-per-token — you'll need to add credit to your OpenRouter account (supports crypto as well). However, it's usually a symbolical spending due to project's simplicity and the budget-friendly model default.
+You'll need to add credit to your OpenRouter account (supports crypto as well). However, it's usually a symbolical spending due to project's simplicity and the budget-friendly model default.
 
 To use it:
 
 1. Create an account at [openrouter.ai](https://openrouter.ai) and generate an API key.
-2. During the deploy, paste the key into the `OPENROUTER_API_KEY` prompt. Already deployed? Open the Cloudflare dashboard, go to your worker → **Settings → Variables and Secrets**, and add a secret named `OPENROUTER_API_KEY` — the change takes effect on save and survives redeploys.
-3. To use a different model, change `AI_MODEL_OPENROUTER` in `wrangler.jsonc` to any [OpenRouter model slug](https://openrouter.ai/models) and push — it redeploys automatically.
+2. Open the Cloudflare dashboard, go to your worker → **Settings → Variables and Secrets**, and add a secret named `OPENROUTER_API_KEY` — the change takes effect on save and survives redeploys. Pawmc switches to OpenRouter automatically whenever the key is set.
+3. To use a different model, add `AI_MODEL_OPENROUTER` under `vars` in `wrangler.jsonc` in your repository with any [OpenRouter model slug](https://openrouter.ai/models) and push — it redeploys automatically. (Plain variables set in the dashboard get overwritten by the next build, so the config file is the reliable place.)
 
 To switch back to Workers AI, delete the `OPENROUTER_API_KEY` secret.
 

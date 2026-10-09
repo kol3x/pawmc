@@ -59,6 +59,7 @@ const MICRO_SUMMARY_MAX = 200
  * Baked-in fallbacks for the AI-related env vars that ship unconfigured: the deploy form stays minimal, and dashboard vars or secrets still override each one.
  */
 const DEFAULT_WORKERS_AI_MODEL = "@cf/zai-org/glm-4.7-flash"
+const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3"
 const DEFAULT_OPENROUTER_LIGHT_MODEL = "z-ai/glm-5.3-flash"
 const DEFAULT_SYSTEM_INSTRUCTION =
   "User values succinct and direct outputs without extra formatting, warnings, and politeness."
@@ -193,7 +194,7 @@ async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?:
       "X-Title": "pawmc",
     },
     body: JSON.stringify({
-      model: model || env.AI_MODEL_OPENROUTER,
+      model: model || env.AI_MODEL_OPENROUTER || DEFAULT_OPENROUTER_MODEL,
       messages,
       provider: { sort },
     }),

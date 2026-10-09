@@ -28,13 +28,7 @@
 	"cloudflare": {
 		"bindings": {
 			"API_KEY": {
-				"description": "Login password for Pawmc. You will enter it in the web app to log in."
-			},
-			"OPENROUTER_API_KEY": {
-				"description": "Optional: your [OpenRouter](https://openrouter.ai/keys) API key. Leave empty to use the free Workers AI."
-			},
-			"AI_MODEL_OPENROUTER": {
-				"description": "OpenRouter model used for chats when a key is set. Any [model slug](https://openrouter.ai/models) works."
+				"description": "Login password for pawmc. You will enter it in the web app to log in."
 			}
 		}
 	}
