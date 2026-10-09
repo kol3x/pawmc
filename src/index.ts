@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
-import { AiConversationEntry, TOPIC_CONFIDENCE_MIN, distillMicroSummary, firstSentence, resolveTopic, runAI, type TopicCandidate } from "./ai"
+import { AiConversationEntry, TOPIC_CONFIDENCE_MIN, distillMicroSummary, firstSentence, resolveTopic, runAI, systemInstruction, type TopicCandidate } from "./ai"
 import { errorMessage } from "./errors"
 import { handleRequest } from "./routes"
 
@@ -87,7 +87,15 @@ export interface TopicNeededResult {
 export interface Env extends Cloudflare.Env {
   ASSISTANT_DO: DurableObjectNamespace<AssistantDurableObject>
   API_KEY: string
-  OPENROUTER_API_KEY: string
+  OPENROUTER_API_KEY?: string
+  /**
+   * Optional overrides for the defaults baked into src/ai.ts; unset on a fresh deploy.
+   */
+  AI_PROVIDER?: string
+  AI_MODEL_WORKERS_AI?: string
+  AI_MODEL_OPENROUTER?: string
+  AI_MODEL_OPENROUTER_LIGHT?: string
+  AI_SYSTEM_INSTRUCTION?: string
 }
 
 export class AssistantDurableObject extends DurableObject<Env> {
@@ -290,7 +298,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
               )
 
             return [
-              this.env.AI_SYSTEM_INSTRUCTION,
+              systemInstruction(this.env),
               `You are a personal assistant helping with: ${category} / ${topicName}.`,
               ...contextParts,
             ].join("\n")
@@ -397,7 +405,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
       }
 
       const summaryPrompt = [
-        this.env.AI_SYSTEM_INSTRUCTION,
+        systemInstruction(this.env),
         topic.summary ? `Existing summary: ${topic.summary}` : null,
         `Update the summary by incorporating the following NEW messages. Category: ${topic.category_name}, Topic: ${topic.name}. Messages are labeled with role fields ("user" and "assistant"). Prioritize "user" messages — they represent confirmed information and intent. "assistant" messages are speculative; only include their content if the user explicitly agreed or confirmed it. Be conservative — avoid adding unconfirmed assumptions.`,
       ]
@@ -459,7 +467,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
       const topicSummariesText = updatedTopics.map((t) => `- ${t.name}: ${t.summary}`).join("\n\n")
 
       const summaryPrompt = [
-        this.env.AI_SYSTEM_INSTRUCTION,
+        systemInstruction(this.env),
         category.summary ? `Existing category summary: ${category.summary}` : null,
         `Update the category summary by incorporating the following UPDATED topic summaries. The category summary should provide a high-level overview, highlighting common themes and key areas of focus.`,
         `Updated topic summaries:\n${topicSummariesText}`,

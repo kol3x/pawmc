@@ -1,4 +1,4 @@
-# Pawmc: Private Assistant with Managed Context
+# pawmc: Private Assistant with Managed Context
 
 A personal LLM assistant that runs on Cloudflare Workers and maintains a user-guided compounding knowledge base across conversations. 
 
@@ -8,8 +8,8 @@ It's simple and lightweight, and you own your data, pick your model, and control
 
 ## Related posts
 
-- [Dear LLM, or how I stopped getting generic advice](https://kol3x.com/blog/dear-llm-or-how-i-stopped-getting-generic-advice/) — the story behind Pawmc
-- [Making LLMs not eat my food, or how I picked up TS](https://kol3x.com/blog/making-llms-not-eat-my-food-or-how-i-picked-up-ts/) — on migrating Pawmc to TS
+- [Dear LLM, or how I stopped getting generic advice](https://kol3x.com/blog/dear-llm-or-how-i-stopped-getting-generic-advice/) — the story behind pawmc
+- [Making LLMs not eat my food, or how I picked up TS](https://kol3x.com/blog/making-llms-not-eat-my-food-or-how-i-picked-up-ts/) — on migrating pawmc to TS
 
 ## Key advantages
 
@@ -43,6 +43,8 @@ Deploying and hosting Pawmc on Cloudflare is way under their free tier limits, a
 
 ## Setup
 
+Your repository stays linked to the template, so updating to the latest version is a one-click **Sync fork** (see [Getting updates](#getting-updates)). 
+
 ### 1. Create your own copy
 
 Click **"Use this template"** on the [GitHub repo](https://github.com/kol3x/Pawmc) to create your own repository.
@@ -51,59 +53,37 @@ Click **"Use this template"** on the [GitHub repo](https://github.com/kol3x/Pawm
 
 Go to [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and create a free account. No credit card required.
 
-### 3. Create an API token
+### 3. Connect your repository to Cloudflare
 
-1. Go to [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Click **Create Token**
-3. Click **Use template** next to "Edit Cloudflare Workers"
-4. Under **Account Resources**, select your account
-5. Click **Continue to summary**, then **Create Token**
-6. Copy the token — you'll need it in the next step
+1. In the Cloudflare dashboard, go to **Workers & Pages** → **Create application** → **Get started** next to **Import a repository**
+2. Under **Git account**, select GitHub and authorize it
+3. Select your repository and the `main` branch
+4. Open **Advanced settings** and add a variable named `API_KEY` with your login password — tick **Encrypt** so it is stored as a secret (add `OPENROUTER_API_KEY` the same way if you already have an OpenRouter key)
+5. Leave the remaining fields at their defaults, click **Save and Deploy**, and wait for the build to finish (a couple of minutes on the first run)
 
-### 4. Add secrets to GitHub
+If the first build fails, check that `API_KEY` was added with **Encrypt** and click **Retry build**.
 
-In your new GitHub repository:
+### 4. Open your worker
 
-1. Go to **Settings → Secrets and variables → Actions**
-2. Click **New repository secret**
-3. Add these two secrets:
-
-| Name | Value |
-|------|-------|
-| `CLOUDFLARE_API_TOKEN` | The API token you created in step 3 |
-| `API_KEY` | A secret password of your choice (you'll enter this in the web app to log in) |
-
-### 5. Deploy
-
-1. In your GitHub repository click the **Actions** tab
-1. Select the **Deploy** workflow from the left sidebar
-1. Under three dots button on the right choose **Run workflow** option
-
-Once deployed, you can put together a link to your worker, based on the email you used to register on Cloudflare, like in the example below.  
-
-```
-replaceme@gmail.com => 
-https://pawmc.replaceme.workers.dev
-```
-
-Open that URL, enter your `API_KEY` and start chatting.
+Copy the worker URL from the dashboard (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
 
 ## Advanced: Use OpenRouter instead of Workers AI
 
-By default, Pawmc uses Cloudflare Workers AI (free, no extra setup). However, Workers AI can be unreliable and is only ok for testing out the project. If you are planning to use it extensively, I recommend switching to [OpenRouter](https://openrouter.ai), which is also supported.
+By default, pawmc uses Cloudflare Workers AI (free, no extra setup). However, Workers AI can be unreliable and is only ok for testing out the project. If you are planning to use it extensively, I recommend switching to [OpenRouter](https://openrouter.ai), which is also supported.
 
-Note that OpenRouter is pay-per-token — you'll need to add credit to your OpenRouter account (supports crypto as well). However, it's usually a symbolical spending due to project's simplicity and the budget-friendly model default.
+The provider is picked automatically: with an OpenRouter key set, Pawmc uses OpenRouter; without one, it uses Workers AI. 
 
-To switch:
+You'll need to add credit to your OpenRouter account (supports crypto as well). However, it's usually a symbolical spending due to project's simplicity and the budget-friendly model default.
+
+To use it:
 
 1. Create an account at [openrouter.ai](https://openrouter.ai) and generate an API key.
-2. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a new secret named `OPENROUTER_API_KEY` with your key.
-3. In `wrangler.jsonc`, set `AI_PROVIDER` to `"openrouter"` and, if you want a different model, update `AI_MODEL_OPENROUTER` to any [OpenRouter model slug](https://openrouter.ai/models).
-4. Commit and push the change (or run the **Deploy** action) to redeploy.
+2. Open the Cloudflare dashboard, go to your worker → **Settings → Variables and Secrets**, and add a secret named `OPENROUTER_API_KEY` — the change takes effect on save and survives redeploys. Pawmc switches to OpenRouter automatically whenever the key is set.
+3. To use a different model, add `AI_MODEL_OPENROUTER` under `vars` in `wrangler.jsonc` in your repository with any [OpenRouter model slug](https://openrouter.ai/models) and push — it redeploys automatically. (Plain variables set in the dashboard get overwritten by the next build, so the config file is the reliable place.)
 
-To switch back, set `AI_PROVIDER` back to `"workers-ai"`.
+To switch back to Workers AI, delete the `OPENROUTER_API_KEY` secret.
 
 ## Getting updates
 
-When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and the action will redeploy automatically.
+When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and your worker redeploys automatically.
 

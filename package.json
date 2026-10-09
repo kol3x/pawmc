@@ -7,12 +7,14 @@
 		"web"
 	],
 	"scripts": {
-		"deploy": "npm run build -w web && wrangler deploy",
-		"dev": "npm run build -w web && wrangler dev",
+		"build": "npm run build -w web",
+		"deploy": "npm run build && wrangler deploy",
+		"dev": "npm run build && wrangler dev",
 		"start": "npm run dev",
 		"test": "vitest run",
 		"worker-typecheck": "tsc --noEmit",
-		"svelte-check": "npm run check -w web"
+		"svelte-check": "npm run check -w web",
+		"gen:demo": "node scripts/gen-demo.mjs"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-plugin": "1.1.11",
@@ -22,5 +24,12 @@
 	},
 	"dependencies": {
 		"zod": "^4.5.4"
+	},
+	"cloudflare": {
+		"bindings": {
+			"API_KEY": {
+				"description": "Login password for pawmc. You will enter it in the web app to log in."
+			}
+		}
 	}
 }

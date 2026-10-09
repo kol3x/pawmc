@@ -56,6 +56,30 @@ const LABEL_TRIM_THRESHOLD = 1200
 const MICRO_SUMMARY_MAX = 200
 
 /**
+ * Baked-in fallbacks for the AI-related env vars that ship unconfigured: the deploy form stays minimal, and dashboard vars or secrets still override each one.
+ */
+const DEFAULT_WORKERS_AI_MODEL = "@cf/zai-org/glm-4.7-flash"
+const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3"
+const DEFAULT_OPENROUTER_LIGHT_MODEL = "z-ai/glm-5.3-flash"
+const DEFAULT_SYSTEM_INSTRUCTION =
+  "User values succinct and direct outputs without extra formatting, warnings, and politeness."
+
+/**
+ * Resolves the AI provider: an explicit `AI_PROVIDER` override wins, otherwise the presence of an OpenRouter key selects OpenRouter and its absence falls back to Workers AI.
+ */
+function resolveProvider(env: Env): "workers-ai" | "openrouter" {
+  const setting = env.AI_PROVIDER || (env.OPENROUTER_API_KEY ? "openrouter" : "workers-ai")
+  return setting === "openrouter" ? "openrouter" : "workers-ai"
+}
+
+/**
+ * Returns the configured system instruction, or the built-in default when the optional env var is absent.
+ */
+export function systemInstruction(env: Env): string {
+  return env.AI_SYSTEM_INSTRUCTION || DEFAULT_SYSTEM_INSTRUCTION
+}
+
+/**
  * Parses a JSON object string, returning null on parse failure or non-object results.
  */
 function parseJsonLoose(text: string): Record<string, unknown> | null {
@@ -135,12 +159,11 @@ type OpenRouterProviderSort = "price" | "throughput"
 export async function runAI(env: Env, systemPrompt: string, conversation: AiConversationEntry[], model?: string, sort?: OpenRouterProviderSort): Promise<string> {
   const messages = [{ role: "system", content: systemPrompt }, ...conversation]
 
-  const providerSetting: string = env.AI_PROVIDER || "workers-ai"
-  const provider = providerSetting === "openrouter" ? "openrouter" : "workers-ai"
+  const provider = resolveProvider(env)
   const res =
     provider === "openrouter"
       ? await callOpenRouter(env, messages, model, sort)
-      : await env.AI.run(env.AI_MODEL_WORKERS_AI, {
+      : await env.AI.run(env.AI_MODEL_WORKERS_AI || DEFAULT_WORKERS_AI_MODEL, {
           messages: messages as unknown as ChatCompletionMessageParam[],
         })
 
@@ -161,6 +184,7 @@ export async function runAI(env: Env, systemPrompt: string, conversation: AiConv
  * Calls the OpenRouter API with the provided messages, routing through providers in the given order (default price: cheapest first). The optional model override selects a lighter model for cheap calls.
  */
 async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?: string, sort: OpenRouterProviderSort = "price"): Promise<unknown> {
+  if (!env.OPENROUTER_API_KEY) throw new Error("OpenRouter is selected but OPENROUTER_API_KEY is not set.")
   const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -170,7 +194,7 @@ async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?:
       "X-Title": "pawmc",
     },
     body: JSON.stringify({
-      model: model || env.AI_MODEL_OPENROUTER,
+      model: model || env.AI_MODEL_OPENROUTER || DEFAULT_OPENROUTER_MODEL,
       messages,
       provider: { sort },
     }),
@@ -183,8 +207,10 @@ async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?:
  * Runs the labeling model: the configured light OpenRouter model, or the workers-ai model when the provider is workers-ai. Labeling and distillation only need cheap classification quality. OpenRouter labeling routes by throughput since these calls sit on the interactive chat path.
  */
 async function runLabeler(env: Env, systemPrompt: string, userMessage: string): Promise<string> {
-  const providerSetting: string = env.AI_PROVIDER || "workers-ai"
-  const model = providerSetting === "openrouter" ? env.AI_MODEL_OPENROUTER_LIGHT : env.AI_MODEL_WORKERS_AI
+  const model =
+    resolveProvider(env) === "openrouter"
+      ? env.AI_MODEL_OPENROUTER_LIGHT || DEFAULT_OPENROUTER_LIGHT_MODEL
+      : env.AI_MODEL_WORKERS_AI || DEFAULT_WORKERS_AI_MODEL
   return runAI(env, systemPrompt, [{ role: "user", content: userMessage }], model, "throughput")
 }
 
@@ -209,7 +235,7 @@ export async function resolveTopic(
     const listing = existing.map((t) => `- ${t.name}${t.summary ? `: ${t.summary}` : ""}`).join("\n")
 
     const systemPrompt = [
-      env.AI_SYSTEM_INSTRUCTION,
+      systemInstruction(env),
       "You label conversation topics for a personal assistant memory system.",
       existing.length
         ? `Existing topics in this category:\n${listing}\n\nIf the user's message clearly belongs to one of these topics, include it with its exact name. Otherwise propose a new topic label.`
@@ -260,7 +286,7 @@ export async function distillMicroSummary(env: Env, summary: string): Promise<st
     const raw = await runLabeler(
       env,
       [
-        env.AI_SYSTEM_INSTRUCTION,
+        systemInstruction(env),
         "Distill the following topic summary into one short sentence description (max 15 words) that makes the topic recognizable at a glance. Reply with the sentence only, without quotes.",
       ].join("\n"),
       trimForLabeling(summary),
