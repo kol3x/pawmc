@@ -26,11 +26,7 @@
 		]
 	},
 	"vars": {
-		"AI_PROVIDER": "workers-ai",
-		"AI_MODEL_WORKERS_AI": "@cf/zai-org/glm-4.7-flash",
-		"AI_MODEL_OPENROUTER": "z-ai/glm-5.3",
-		"AI_MODEL_OPENROUTER_LIGHT": "z-ai/glm-5.3-flash",
-		"AI_SYSTEM_INSTRUCTION": "User values succinct and direct outputs without extra formatting, warnings, and politeness."
+		"AI_MODEL_OPENROUTER": "z-ai/glm-5.3"
 	},
 	"secrets": { "required": ["API_KEY"] },
 	"observability": {

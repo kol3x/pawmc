@@ -43,6 +43,24 @@ Deploying and hosting Pawmc on Cloudflare is way under their free tier limits, a
 
 ## Setup
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kol3x/pawmc)
+
+1. Click the button and connect your GitHub and Cloudflare accounts.
+2. In the deploy form, pick a worker name and fill in the secrets:
+   - `API_KEY` — invent a password, you will enter it in the web app to log in.
+   - `OPENROUTER_API_KEY` — leave empty unless you already have an OpenRouter key (see the OpenRouter section below).
+3. Click **Deploy** and wait for the build to finish (a couple of minutes on the first run).
+4. Copy the worker URL shown after the deploy (it looks like `https://pawmc.your-subdomain.workers.dev`), open it, enter your `API_KEY`, and start chatting.
+
+The button also creates your own copy of this repository on GitHub and wires up automatic deploys: every push to `main` rebuilds and redeploys your worker.
+
+## Advanced: manual setup with GitHub Actions
+
+Prefer explicit control over deploys instead of the one-click flow? The repository ships a **Deploy** workflow that builds and deploys on every push to `main`.
+
+<details>
+<summary>Manual setup steps</summary>
+
 ### 1. Create your own copy
 
 Click **"Use this template"** on the [GitHub repo](https://github.com/kol3x/Pawmc) to create your own repository.
@@ -88,22 +106,25 @@ https://pawmc.replaceme.workers.dev
 
 Open that URL, enter your `API_KEY` and start chatting.
 
+</details>
+
 ## Advanced: Use OpenRouter instead of Workers AI
 
 By default, Pawmc uses Cloudflare Workers AI (free, no extra setup). However, Workers AI can be unreliable and is only ok for testing out the project. If you are planning to use it extensively, I recommend switching to [OpenRouter](https://openrouter.ai), which is also supported.
 
+The provider is picked automatically: with an OpenRouter key set, Pawmc uses OpenRouter; without one, it uses Workers AI. There is no provider flag to flip.
+
 Note that OpenRouter is pay-per-token — you'll need to add credit to your OpenRouter account (supports crypto as well). However, it's usually a symbolical spending due to project's simplicity and the budget-friendly model default.
 
-To switch:
+To use it:
 
 1. Create an account at [openrouter.ai](https://openrouter.ai) and generate an API key.
-2. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a new secret named `OPENROUTER_API_KEY` with your key.
-3. In `wrangler.jsonc`, set `AI_PROVIDER` to `"openrouter"` and, if you want a different model, update `AI_MODEL_OPENROUTER` to any [OpenRouter model slug](https://openrouter.ai/models).
-4. Commit and push the change (or run the **Deploy** action) to redeploy.
+2. During the deploy, paste the key into the `OPENROUTER_API_KEY` prompt. Already deployed? Open the Cloudflare dashboard, go to your worker → **Settings → Variables and Secrets**, and add a secret named `OPENROUTER_API_KEY` — the change takes effect on save and survives redeploys.
+3. To use a different model, change `AI_MODEL_OPENROUTER` in `wrangler.jsonc` to any [OpenRouter model slug](https://openrouter.ai/models) and push — it redeploys automatically.
 
-To switch back, set `AI_PROVIDER` back to `"workers-ai"`.
+To switch back to Workers AI, delete the `OPENROUTER_API_KEY` secret.
 
 ## Getting updates
 
-When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and the action will redeploy automatically.
+When the template repo is updated, go to your GitHub repo, click **Sync fork** → **Update branch**, and your worker redeploys automatically.
 
