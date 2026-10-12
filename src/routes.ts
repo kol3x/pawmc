@@ -25,6 +25,19 @@ const RenameRequest = z.object({
   name: z.string().trim().min(1),
 })
 
+const ImportRequest = z.object({
+  category: z.string().trim().min(1),
+  topic: z.string().trim().optional(),
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().trim().min(1),
+      }),
+    )
+    .min(1),
+})
+
 const UpdateMessageRequest = z.object({
   id: z.number().int().positive(),
   index: z.number().int().min(0),
@@ -94,6 +107,25 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
       console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic || "(autogen)"}, noteMode=${!!noteMode}`)
       const result = await stub.chat(category, topic || "", message, !!noteMode)
+      if ("topicNeeded" in result) return Response.json(result, { status: 422 })
+      return Response.json(result)
+    }
+
+    /**
+     * POST /import - Stores a historical conversation as-is (real user/assistant messages,
+     * no AI reply). With an empty topic, the labeler picks or creates one; on low confidence
+     * returns 422 topicNeeded with candidates, storing nothing.
+     */
+    if (request.method === "POST" && url.pathname === "/import") {
+      const body = await parseJsonBody(request)
+      if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+      const parsed = ImportRequest.safeParse(body)
+      if (!parsed.success)
+        return Response.json({ error: "category and a non-empty messages array are required" }, { status: 400 })
+      console.log(
+        `[INFO][${stage}] Import request: category=${parsed.data.category}, topic=${parsed.data.topic || "(autogen)"}, messages=${parsed.data.messages.length}`,
+      )
+      const result = await stub.importConversation(parsed.data.category, parsed.data.topic || "", parsed.data.messages)
       if ("topicNeeded" in result) return Response.json(result, { status: 422 })
       return Response.json(result)
     }

@@ -286,25 +286,28 @@ export class AssistantDurableObject extends DurableObject<Env> {
 
       messages.push({ role: "user", content: userMessage })
 
-      const systemPrompt = noteMode
-        ? "The user is saving a context note. Acknowledge with exactly one short word."
-        : await (async () => {
-            const contextParts = []
-            if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`)
-            if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`)
-            if (!contextParts.length)
-              contextParts.push(
-                "You have no prior context about this topic. Ask the user about their situation if needed.",
-              )
+      let assistantMessage = ""
+      if (noteMode) {
+        assistantMessage = "saved"
+      } else {
+        const systemPrompt = await (async () => {
+          const contextParts = []
+          if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`)
+          if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`)
+          if (!contextParts.length)
+            contextParts.push(
+              "You have no prior context about this topic. Ask the user about their situation if needed.",
+            )
 
-            return [
-              systemInstruction(this.env),
-              `You are a personal assistant helping with: ${category} / ${topicName}.`,
-              ...contextParts,
-            ].join("\n")
-          })()
+          return [
+            systemInstruction(this.env),
+            `You are a personal assistant helping with: ${category} / ${topicName}.`,
+            ...contextParts,
+          ].join("\n")
+        })()
 
-      const assistantMessage = await runAI(this.env, systemPrompt, messages)
+        assistantMessage = await runAI(this.env, systemPrompt, messages)
+      }
 
       messages.push({ role: "assistant", content: assistantMessage })
 
@@ -318,6 +321,75 @@ export class AssistantDurableObject extends DurableObject<Env> {
       console.log(`[INFO][${stage}] Conversation updated: id=${conversationId}, messages=${messages.length}`)
 
       return { response: assistantMessage, conversationId: Number(conversationId), topic: topicName, topicId: Number(topicRow.id) }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
+   * Imports a historical conversation as-is: real user/assistant messages, no AI reply.
+   * Unlike chat(), always creates a new conversation (an import is a distinct historical
+   * session, not a continuation of a fresh one). With an empty topic, the labeler picks
+   * an existing topic (or creates one), so similar sessions share topics.
+   */
+  async importConversation(
+    category: string,
+    topic: string,
+    messages: AiConversationEntry[],
+  ): Promise<{ conversationId: number; topic: string; topicId: number } | TopicNeededResult> {
+    const stage = "importConversation"
+    try {
+      const parsed = AiConversationEntry.array().parse(messages)
+      if (!category?.trim() || !parsed.length)
+        throw new Error(`[${stage}] Invalid input: category and messages are required`)
+      const firstUser = parsed.find((m) => m.role === "user")
+      if (!firstUser)
+        throw new Error(`[${stage}] Conversation must contain a user message`)
+
+      const categoryRow = this.#db
+        .exec(
+          `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
+          category.trim(),
+        )
+        .one()
+
+      let topicName = topic?.trim() || ""
+      let newTopicMicro: string | undefined
+      if (!topicName) {
+        const resolved = await resolveTopic(this.env, this.#db, Number(categoryRow.id), firstUser.content.trim())
+        if (resolved.topic) {
+          topicName = resolved.topic
+        } else {
+          const top = resolved.candidates[0]
+          if (!top || top.confidence < TOPIC_CONFIDENCE_MIN) {
+            console.log(`[INFO][${stage}] Topic confidence too low, asking caller: candidates=${resolved.candidates.length}`)
+            return { topicNeeded: true, candidates: resolved.candidates }
+          }
+          topicName = top.name
+          newTopicMicro = top.description
+        }
+      }
+
+      const topicRow = this.#db
+        .exec(
+          `INSERT INTO topics (category_id, name, micro_summary) VALUES (?, ?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id`,
+          categoryRow.id,
+          topicName,
+          newTopicMicro || "",
+        )
+        .one()
+
+      const conversation = this.#db
+        .exec(
+          `INSERT INTO conversations (topic_id, messages) VALUES (?, ?) RETURNING id`,
+          topicRow.id,
+          JSON.stringify(parsed),
+        )
+        .one()
+
+      console.log(`[INFO][${stage}] Imported conversation: id=${conversation.id}, category=${category}, topic=${topicName}, messages=${parsed.length}`)
+      return { conversationId: Number(conversation.id), topic: topicName, topicId: Number(topicRow.id) }
     } catch (err) {
       console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
       throw err

@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "pawmc",
+	"name": "pawmc-for-pi",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-03-17",
 	"durable_objects": {
