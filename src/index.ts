@@ -286,25 +286,28 @@ export class AssistantDurableObject extends DurableObject<Env> {
 
       messages.push({ role: "user", content: userMessage })
 
-      const systemPrompt = noteMode
-        ? "The user is saving a context note. Acknowledge with exactly one short word."
-        : await (async () => {
-            const contextParts = []
-            if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`)
-            if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`)
-            if (!contextParts.length)
-              contextParts.push(
-                "You have no prior context about this topic. Ask the user about their situation if needed.",
-              )
+      let assistantMessage = ""
+      if (noteMode) {
+        assistantMessage = "saved"
+      } else {
+        const systemPrompt = await (async () => {
+          const contextParts = []
+          if (categoryRow.summary) contextParts.push(`Category context: ${categoryRow.summary}`)
+          if (topicRow.summary) contextParts.push(`Topic context: ${topicRow.summary}`)
+          if (!contextParts.length)
+            contextParts.push(
+              "You have no prior context about this topic. Ask the user about their situation if needed.",
+            )
 
-            return [
-              systemInstruction(this.env),
-              `You are a personal assistant helping with: ${category} / ${topicName}.`,
-              ...contextParts,
-            ].join("\n")
-          })()
+          return [
+            systemInstruction(this.env),
+            `You are a personal assistant helping with: ${category} / ${topicName}.`,
+            ...contextParts,
+          ].join("\n")
+        })()
 
-      const assistantMessage = await runAI(this.env, systemPrompt, messages)
+        assistantMessage = await runAI(this.env, systemPrompt, messages)
+      }
 
       messages.push({ role: "assistant", content: assistantMessage })
 
