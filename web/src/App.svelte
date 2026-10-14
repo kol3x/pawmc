@@ -88,6 +88,12 @@
 					app.restoreFromUrl()
 					return app.loadStream()
 				})
+				.then(() => {
+					// First use: put the cursor in the composer right away (desktop only — a
+					// mobile focus would pop the keyboard unprompted).
+					if (app.categories && app.categories.length === 0 && window.matchMedia("(min-width: 768px)").matches)
+						composerRef?.focusComposer()
+				})
 				.catch((err) => {
 					booted = false
 					if (err instanceof ApiError && err.status === 401) return

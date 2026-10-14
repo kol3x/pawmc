@@ -73,6 +73,7 @@ async function refreshAll() {
 	try {
 		await api("POST", "/update-summaries")
 		await app.loadCategories(true)
+		await app.loadStream()
 		pushToast("Memory refreshed", "success")
 	} catch (err) {
 		pushToast(`Couldn't refresh memory — ${errorMessage(err)}`, "error")

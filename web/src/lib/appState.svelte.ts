@@ -278,6 +278,7 @@ class AppState {
 	 */
 	selectCategory(categoryId: number): void {
 		if (categoryId === this.categoryId) return
+		this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.categoryId = categoryId
 		this.topicId = null
@@ -292,6 +293,7 @@ class AppState {
 	 * with loadStream's merge reconciling it instead of blanking and refilling the chat.
 	 */
 	selectTopic(categoryId: number, topicId: number, opts?: { keepStream?: boolean }): void {
+		if (!opts?.keepStream) this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.categoryId = categoryId
 		this.topicId = topicId
@@ -304,6 +306,7 @@ class AppState {
 	 * Clears the topic selection so the next send autogens a fresh topic; the category stays selected.
 	 */
 	deselectTopic(): void {
+		this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.topicId = null
 		this.stream = []
@@ -313,6 +316,7 @@ class AppState {
 	 * Stages a ghost category tab: the name is not saved server-side until the first message is sent.
 	 */
 	stageNewCategory(name: string): void {
+		this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.pendingCategoryName = name.trim()
 		this.categoryId = null
@@ -417,12 +421,22 @@ class AppState {
 	}
 
 	/**
+	 * Discards a parked topic pick because the user navigated away mid-pick: drops the parked bubble with it so the candidate picker doesn't orphan into the newly selected topic's chat. The parked draft is lost — recovering it into the composer isn't wired up.
+	 */
+	#abandonParkedPick(): void {
+		if (!this.topicNeeded) return
+		this.#clearParked(this.topicNeeded)
+		this.topicNeeded = null
+	}
+
+	/**
 	 * Sends a message: appends an optimistic user bubble, resolves the topic when none is
 	 * selected (a dedicated POST /topic call, so topic selection shows as its own progress
 	 * phase and the 422 candidate picker arrives before the reply request), posts to /chat
 	 * with the resolved topic, renders the assistant reply immediately from the response,
 	 * then refreshes categories and the stream in the background. The category resolves to
-	 * an explicit override, else the staged ghost tab name, else the selected tab; the topic
+	 * an explicit override, else the staged ghost tab name, else the selected tab — on a
+	 * fresh workspace with no diaries it defaults to the fixed "personal" diary; the topic
 	 * resolves to an explicit override (autotopic picker), else the selected topic, else the
 	 * /topic call. On a 422 autotopic gate response nothing is stored and the draft waits in
 	 * a candidate picker (topicNeeded). Returns true when the send was accepted (or parked
@@ -442,7 +456,11 @@ class AppState {
 			this.topicNeeded = null
 		}
 
-		const catName = categoryName || this.pendingCategoryName || this.selectedCategory?.name
+		let catName = categoryName || this.pendingCategoryName || this.selectedCategory?.name
+		// First-use seeding: on a workspace with zero diaries, a send with no explicit target
+		// lands in the fixed "personal" diary instead of erroring — no diary decision before
+		// the first message. Rename keeps it theirs afterwards.
+		if (!catName && this.categories && this.categories.length === 0) catName = "personal"
 		if (!catName) {
 			pushToast("Pick a diary first", "error")
 			return false

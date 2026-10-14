@@ -115,9 +115,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
 
     /**
-     * POST /topic - Resolves the topic for a message without storing anything, via the
-     * same labeler + confidence gate as /chat's autogen: 200 {topic} when a topic is
-     * picked confidently, 422 topicNeeded with candidates when the caller should offer
+     * POST /topic - Resolves the topic for a message via the same labeler + confidence
+     * gate as /chat's autogen: 200 {topic, topicId} when a topic is picked confidently
+     * (the topic row is created here, so it shows up in the UI before the reply runs),
+     * 422 topicNeeded with candidates and nothing stored when the caller should offer
      * one-click choices. Lets the frontend run topic selection as its own phase.
      */
     if (request.method === "POST" && url.pathname === "/topic") {
