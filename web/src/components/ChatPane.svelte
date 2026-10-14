@@ -7,7 +7,7 @@ import type { Component } from "svelte"
 import MessageBubble from "./MessageBubble.svelte"
 import Composer from "./Composer.svelte"
 import MemoryBar from "./MemoryBar.svelte"
-import TopicPicker from "./TopicPicker.svelte"
+import PendingReply from "./PendingReply.svelte"
 import Menu from "./Menu.svelte"
 import ConfirmModal from "./ConfirmModal.svelte"
 
@@ -85,7 +85,10 @@ function onScroll() {
 }
 
 $effect(() => {
+	// Track both the group count and the last group's message count: replies render into
+	// an existing group (length unchanged), and the growth must re-pin the scroll.
 	void app.stream.length
+	void app.stream.at(-1)?.messages.length
 	if (nearBottom && scrollerEl) scrollerEl.scrollTop = scrollerEl.scrollHeight
 })
 
@@ -115,7 +118,6 @@ function restoreDraft(draft: string) {
 		</aside>
 	{/if}
 	<div class="flex min-w-0 flex-1 flex-col">
-		<TopicPicker oncancel={restoreDraft} />
 		<div bind:this={scrollerEl} onscroll={onScroll} class="flex-1 overflow-y-auto px-4 py-4">
 		{#if !app.selectedCategory && !app.pendingCategoryName}
 			<div class="flex h-full items-center justify-center">
@@ -207,9 +209,7 @@ function restoreDraft(draft: string) {
 						</div>
 					{/if}
 				{/each}
-				{#if app.sending && !app.stream.some((g) => g.messages.some((m) => m.pending))}
-					<div class="text-xs text-faint">thinking…</div>
-				{/if}
+				<PendingReply oncancel={restoreDraft} />
 			</div>
 		{/if}
 	</div>

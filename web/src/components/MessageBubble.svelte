@@ -69,9 +69,6 @@ const html = $derived(renderMarkdown(msg.content))
 				{:else}
 					<div class="md">{@html html}</div>
 				{/if}
-				{#if msg.pending}
-					<div class="mt-1 text-[10px] opacity-70">sending…</div>
-				{/if}
 			</div>
 		{/if}
 		{#if canMutate && !editing}
