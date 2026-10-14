@@ -3,7 +3,7 @@ import { app, pushToast, type ConversationGroup, type StreamMessage } from "../l
 import { ui } from "../lib/uiState.svelte"
 import { relativeTime } from "../lib/freshness"
 import { api, ApiError, errorMessage } from "../api"
-import type { Component } from "svelte"
+import { untrack, type Component } from "svelte"
 import MessageBubble from "./MessageBubble.svelte"
 import Composer from "./Composer.svelte"
 import MemoryBar from "./MemoryBar.svelte"
@@ -89,7 +89,10 @@ $effect(() => {
 	// an existing group (length unchanged), and the growth must re-pin the scroll.
 	void app.stream.length
 	void app.stream.at(-1)?.messages.length
-	if (nearBottom && scrollerEl) scrollerEl.scrollTop = scrollerEl.scrollHeight
+	// nearBottom must NOT be a dependency: reading it untracked keeps the pin firing only
+	// on content changes. Reactively, the effect would re-run the moment the user scrolls
+	// into the bottom zone and snap them to the very end — the "scroll jumps at the end" bug.
+	if (untrack(() => nearBottom) && scrollerEl) scrollerEl.scrollTop = scrollerEl.scrollHeight
 })
 
 function fmtDate(ts: number): string {
