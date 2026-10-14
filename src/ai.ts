@@ -60,7 +60,10 @@ const MICRO_SUMMARY_MAX = 200
  */
 const DEFAULT_WORKERS_AI_MODEL = "@cf/zai-org/glm-4.7-flash"
 const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3"
-const DEFAULT_OPENROUTER_LIGHT_MODEL = "z-ai/glm-5.3-flash"
+/**
+ * Baked-in labeler model, not configurable: labeling calls tune request parameters to this specific model (it thinks at max effort by default and rejects disabling reasoning, so the calls pin `effort: "low"`), and topic-label quality is insensitive to model choice anyway. Dashboard overrides could silently break those parameters on a different model.
+ */
+const LABELER_MODEL = "z-ai/glm-5.3-flash"
 const DEFAULT_SYSTEM_INSTRUCTION =
   "User values succinct and direct outputs without extra formatting, warnings, and politeness."
 
@@ -153,16 +156,19 @@ function trimForLabeling(message: string): string {
 /** OpenRouter provider routing order: `price` picks the cheapest provider, `throughput` the fastest. */
 type OpenRouterProviderSort = "price" | "throughput"
 
+/** OpenRouter unified reasoning control: `effort: "low"` dials thinking models down from their default effort, cutting latency on cheap classification calls. */
+type OpenRouterReasoning = { effort: "low" }
+
 /**
- * Runs the AI model with the given system prompt and user messages. The optional model override applies to the OpenRouter provider only, as does the optional provider sort (default price).
+ * Runs the AI model with the given system prompt and user messages. The optional model override, provider sort (default price), and reasoning control apply to the OpenRouter provider only.
  */
-export async function runAI(env: Env, systemPrompt: string, conversation: AiConversationEntry[], model?: string, sort?: OpenRouterProviderSort): Promise<string> {
+export async function runAI(env: Env, systemPrompt: string, conversation: AiConversationEntry[], model?: string, sort?: OpenRouterProviderSort, reasoning?: OpenRouterReasoning): Promise<string> {
   const messages = [{ role: "system", content: systemPrompt }, ...conversation]
 
   const provider = resolveProvider(env)
   const res =
     provider === "openrouter"
-      ? await callOpenRouter(env, messages, model, sort)
+      ? await callOpenRouter(env, messages, model, sort, reasoning)
       : await env.AI.run(env.AI_MODEL_WORKERS_AI || DEFAULT_WORKERS_AI_MODEL, {
           messages: messages as unknown as ChatCompletionMessageParam[],
         })
@@ -181,9 +187,9 @@ export async function runAI(env: Env, systemPrompt: string, conversation: AiConv
 }
 
 /**
- * Calls the OpenRouter API with the provided messages, routing through providers in the given order (default price: cheapest first). The optional model override selects a lighter model for cheap calls.
+ * Calls the OpenRouter API with the provided messages, routing through providers in the given order (default price: cheapest first). The optional model override selects a lighter model for cheap calls; the optional reasoning control disables thinking for models that are reasoning by default.
  */
-async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?: string, sort: OpenRouterProviderSort = "price"): Promise<unknown> {
+async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?: string, sort: OpenRouterProviderSort = "price", reasoning?: OpenRouterReasoning): Promise<unknown> {
   if (!env.OPENROUTER_API_KEY) throw new Error("OpenRouter is selected but OPENROUTER_API_KEY is not set.")
   const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -197,6 +203,7 @@ async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?:
       model: model || env.AI_MODEL_OPENROUTER || DEFAULT_OPENROUTER_MODEL,
       messages,
       provider: { sort },
+      ...(reasoning ? { reasoning } : {}),
     }),
   })
   if (!resp.ok) throw new Error(`OpenRouter request failed: ${resp.status} ${await resp.text()}`)
@@ -204,14 +211,14 @@ async function callOpenRouter(env: Env, messages: AiConversationEntry[], model?:
 }
 
 /**
- * Runs the labeling model: the configured light OpenRouter model, or the workers-ai model when the provider is workers-ai. Labeling and distillation only need cheap classification quality. OpenRouter labeling routes by throughput since these calls sit on the interactive chat path.
+ * Runs the labeling model: the baked-in light OpenRouter model, or the workers-ai model when the provider is workers-ai. Labeling and distillation only need cheap classification quality. OpenRouter labeling routes by throughput (these calls sit on the interactive chat path) and drops reasoning effort to the model's minimum, which dominates the latency otherwise: the light model thinks at max effort by default, and the endpoint rejects disabling reasoning outright.
  */
 async function runLabeler(env: Env, systemPrompt: string, userMessage: string): Promise<string> {
   const model =
     resolveProvider(env) === "openrouter"
-      ? env.AI_MODEL_OPENROUTER_LIGHT || DEFAULT_OPENROUTER_LIGHT_MODEL
+      ? LABELER_MODEL
       : env.AI_MODEL_WORKERS_AI || DEFAULT_WORKERS_AI_MODEL
-  return runAI(env, systemPrompt, [{ role: "user", content: userMessage }], model, "throughput")
+  return runAI(env, systemPrompt, [{ role: "user", content: userMessage }], model, "throughput", { effort: "low" })
 }
 
 /**
