@@ -159,7 +159,7 @@ it("builds chat prompts from category and topic", async () => {
   const { bodies } = stubOpenRouter("ok")
   await chat("qa-prompt", "t1", "hi")
   expect(bodies[0]?.messages[0]?.role).toBe("system")
-  expect(bodies[0]?.messages[0]?.content).toContain("qa-prompt / t1")
+  expect(bodies[0]?.messages[0]?.content).toContain("category - qa-prompt, topic - t1")
 })
 
 it("reuses the latest conversation while it stays fresh", async () => {
@@ -541,7 +541,7 @@ it("two-step flow: POST /topic resolves, POST /chat replies under the resolved t
   expect(bodies[1]?.model).toBe("test-model")
   expect(bodies[1]?.provider?.sort).toBe("price")
   expect(bodies[1]?.reasoning).toBeUndefined()
-  expect(bodies[1]?.messages[0]?.content).toContain("qa-topic-step / project kickoff")
+  expect(bodies[1]?.messages[0]?.content).toContain("category - qa-topic-step, topic - project kickoff")
 })
 
 it("POST /topic gates on low confidence with candidates and stores nothing", async () => {

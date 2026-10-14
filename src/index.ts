@@ -283,7 +283,7 @@ export class AssistantDurableObject extends DurableObject<Env> {
 
           return [
             systemInstruction(this.env),
-            `You are a personal assistant helping with: ${category} / ${topicName}.`,
+            `You are a personal assistant helping with: category - ${category}, topic - ${topicName}.`,
             ...contextParts,
           ].join("\n")
         })()
