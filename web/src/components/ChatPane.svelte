@@ -107,6 +107,12 @@ function fmtDate(ts: number): string {
 const spoilerSummary = $derived(app.selectedTopic?.micro_summary || app.selectedTopic?.summary || "")
 
 /**
+ * True on a workspace with zero diaries (first use, demo excluded): the chat area swaps
+ * its empty state for first-message guidance instead of the pick-a-diary prompt.
+ */
+const firstUse = $derived(app.categories !== null && app.categories.length === 0 && !ui.demoActive)
+
+/**
  * Hands a cancelled autotopic pick back to the composer.
  */
 function restoreDraft(draft: string) {
@@ -122,33 +128,10 @@ function restoreDraft(draft: string) {
 	{/if}
 	<div class="flex min-w-0 flex-1 flex-col">
 		<div bind:this={scrollerEl} onscroll={onScroll} class="flex-1 overflow-y-auto px-4 py-4">
-		{#if !app.selectedCategory && !app.pendingCategoryName}
-			<div class="flex h-full items-center justify-center">
-				<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
-					Pick a diary above, or start a new one with the + chip. A diary begins with your first message.
-				</p>
-			</div>
-		{:else if !app.stream.length}
-			{#if app.loadingStream}
-				<div class="flex h-full items-center justify-center">
-					<svg class="animate-spin text-faint" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
-				</div>
-			{:else}
-				<div class="flex h-full items-center justify-center">
-					<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
-					{#if app.pendingCategoryName}
-						"{app.pendingCategoryName}" is ready — your first message here creates it.
-					{:else if app.selectedTopic}
-						{app.selectedTopic.summary
-							? "Memory holds this topic's context — new messages continue below."
-							: "Messages you send appear here and build this topic's memory."}
-					{:else}
-						Send your first message — a topic is created for it automatically, or pick one above.
-					{/if}
-				</p>
-				</div>
-			{/if}
-		{:else}
+		{#if app.stream.length}
+			<!-- The stream always wins while it has content — including a just-started send's
+			optimistic bubble, which must never fall through to an empty-state branch (on first
+			use nothing is selected yet, so the pick-a-diary prompt would flash mid-send). -->
 			<div class="mx-auto flex max-w-3xl flex-col gap-1">
 				{#each app.stream as group (group.id < 0 ? `temp-${group.createdAt}` : group.id)}
 					{#if group.summarized}
@@ -209,10 +192,43 @@ function restoreDraft(draft: string) {
 								/>
 							{/each}
 							</div>
+							<p class="pb-3 text-[10px] text-faint">Not in memory yet — folds with the daily update.</p>
 						</div>
 					{/if}
 				{/each}
 				<PendingReply oncancel={restoreDraft} />
+			</div>
+		{:else if firstUse}
+			<div class="flex h-full items-center justify-center">
+				<p class="max-w-md text-center font-serif text-sm leading-relaxed text-dim md:text-base">
+					pawmc answers better once it knows you, <br> start with the basics:
+					who you are, what problem you're facing today, what your goals are. <br> Your first message opens
+					a "personal" diary. Each day folds into memory at midnight UTC.
+				</p>
+			</div>
+		{:else if !app.selectedCategory && !app.pendingCategoryName}
+			<div class="flex h-full items-center justify-center">
+				<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
+					Pick a diary above, or start a new one with the + chip. A diary begins with your first message.
+				</p>
+			</div>
+		{:else if app.loadingStream}
+			<div class="flex h-full items-center justify-center">
+				<svg class="animate-spin text-faint" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
+			</div>
+		{:else}
+			<div class="flex h-full items-center justify-center">
+				<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
+				{#if app.pendingCategoryName}
+					"{app.pendingCategoryName}" is ready — your first message here creates it.
+				{:else if app.selectedTopic}
+					{app.selectedTopic.summary
+						? "Memory holds this topic's context — new messages continue below."
+						: "Messages you send appear here and build this topic's memory."}
+				{:else}
+					Send your first message — a topic is created for it automatically, or pick one above.
+				{/if}
+			</p>
 			</div>
 		{/if}
 	</div>

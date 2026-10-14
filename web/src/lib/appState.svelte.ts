@@ -422,7 +422,8 @@ class AppState {
 	 * phase and the 422 candidate picker arrives before the reply request), posts to /chat
 	 * with the resolved topic, renders the assistant reply immediately from the response,
 	 * then refreshes categories and the stream in the background. The category resolves to
-	 * an explicit override, else the staged ghost tab name, else the selected tab; the topic
+	 * an explicit override, else the staged ghost tab name, else the selected tab — on a
+	 * fresh workspace with no diaries it defaults to the fixed "personal" diary; the topic
 	 * resolves to an explicit override (autotopic picker), else the selected topic, else the
 	 * /topic call. On a 422 autotopic gate response nothing is stored and the draft waits in
 	 * a candidate picker (topicNeeded). Returns true when the send was accepted (or parked
@@ -442,7 +443,11 @@ class AppState {
 			this.topicNeeded = null
 		}
 
-		const catName = categoryName || this.pendingCategoryName || this.selectedCategory?.name
+		let catName = categoryName || this.pendingCategoryName || this.selectedCategory?.name
+		// First-use seeding: on a workspace with zero diaries, a send with no explicit target
+		// lands in the fixed "personal" diary instead of erroring — no diary decision before
+		// the first message. Rename keeps it theirs afterwards.
+		if (!catName && this.categories && this.categories.length === 0) catName = "personal"
 		if (!catName) {
 			pushToast("Pick a diary first", "error")
 			return false
