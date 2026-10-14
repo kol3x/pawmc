@@ -51,9 +51,6 @@ function cancel() {
 						onclick={() => void app.pickTopicAndResend(c.name)}
 					>
 						<span class="font-medium">{c.name}</span>
-						{#if c.description}
-							<span class="truncate text-faint">{c.description}</span>
-						{/if}
 						{#if c.exists}
 							<span class="rounded-full border border-line px-1.5 text-[10px] uppercase tracking-wide text-faint">existing</span>
 						{/if}

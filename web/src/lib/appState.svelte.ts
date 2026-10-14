@@ -278,6 +278,7 @@ class AppState {
 	 */
 	selectCategory(categoryId: number): void {
 		if (categoryId === this.categoryId) return
+		this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.categoryId = categoryId
 		this.topicId = null
@@ -292,6 +293,7 @@ class AppState {
 	 * with loadStream's merge reconciling it instead of blanking and refilling the chat.
 	 */
 	selectTopic(categoryId: number, topicId: number, opts?: { keepStream?: boolean }): void {
+		if (!opts?.keepStream) this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.categoryId = categoryId
 		this.topicId = topicId
@@ -304,6 +306,7 @@ class AppState {
 	 * Clears the topic selection so the next send autogens a fresh topic; the category stays selected.
 	 */
 	deselectTopic(): void {
+		this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.topicId = null
 		this.stream = []
@@ -313,6 +316,7 @@ class AppState {
 	 * Stages a ghost category tab: the name is not saved server-side until the first message is sent.
 	 */
 	stageNewCategory(name: string): void {
+		this.#abandonParkedPick()
 		this.selectionEpoch++
 		this.pendingCategoryName = name.trim()
 		this.categoryId = null
@@ -414,6 +418,15 @@ class AppState {
 		if (!need.parkedGroup) return
 		if (!this.stream.includes(need.parkedGroup)) return
 		this.#dropPendingBubble(need.parkedGroup)
+	}
+
+	/**
+	 * Discards a parked topic pick because the user navigated away mid-pick: drops the parked bubble with it so the candidate picker doesn't orphan into the newly selected topic's chat. The parked draft is lost — recovering it into the composer isn't wired up.
+	 */
+	#abandonParkedPick(): void {
+		if (!this.topicNeeded) return
+		this.#clearParked(this.topicNeeded)
+		this.topicNeeded = null
 	}
 
 	/**

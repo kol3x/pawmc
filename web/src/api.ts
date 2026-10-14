@@ -63,9 +63,10 @@ export interface TopicNeededResponse {
 	candidates: TopicCandidate[]
 }
 
-/** 200 /topic response: the labeler picked this topic confidently; the topic row is only created by the later /chat call. */
+/** 200 /topic response: the labeler picked this topic confidently; the topic row is created by this call (low confidence returns a 422 with nothing stored). */
 export interface TopicResolution {
 	topic: string
+	topicId: number
 }
 
 export type SummaryType = "category" | "topic"
