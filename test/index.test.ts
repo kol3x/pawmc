@@ -60,7 +60,7 @@ async function backdateConversations(seconds: number): Promise<void> {
   })
 }
 
-type StubBody = { model?: string; provider?: { sort?: string }; messages: Array<{ role: string; content: string }> }
+type StubBody = { model?: string; provider?: { sort?: string }; reasoning?: { enabled?: boolean }; messages: Array<{ role: string; content: string }> }
 
 function stubOpenRouter(content: string | string[]): { bodies: StubBody[] } {
   const responses = Array.isArray(content) ? content : [content]
@@ -429,11 +429,13 @@ it("generates a new topic when the chat starts without one", async () => {
   expect(categories.body.find((c) => c.name === "qa-autogen")?.topics[0]?.micro_summary).toBe("planning the project kickoff")
 
   expect(bodies).toHaveLength(2)
-  expect(bodies[0]?.model).toBe("test-model-light")
+  expect(bodies[0]?.model).toBe("z-ai/glm-5.3-flash")
   expect(bodies[0]?.provider?.sort).toBe("throughput")
+  expect(bodies[0]?.reasoning).toEqual({ effort: "low" })
   expect(bodies[0]?.messages.at(-1)?.content).toContain("plan the project kickoff")
   expect(bodies[1]?.model).toBe("test-model")
   expect(bodies[1]?.provider?.sort).toBe("price")
+  expect(bodies[1]?.reasoning).toBeUndefined()
   expect(bodies[1]?.messages[0]?.content).toContain("qa-autogen / project kickoff")
 })
 
@@ -533,9 +535,10 @@ it("distills a micro summary in a separate call on fold", async () => {
   const categories = await fetchJson<CategoryRow[]>("/categories")
   expect(categories.body.find((c) => c.name === "qa-micro")?.topics[0]?.micro_summary).toBe("one-line topic gist")
 
-  const distillCalls = bodies.filter((b) => b?.model === "test-model-light")
+  const distillCalls = bodies.filter((b) => b?.model === "z-ai/glm-5.3-flash")
   expect(distillCalls.length).toBeGreaterThan(0)
   expect(distillCalls[0]?.provider?.sort).toBe("throughput")
+  expect(distillCalls[0]?.reasoning).toEqual({ effort: "low" })
 })
 
 it("backfills missing micro summaries on the next summary run", async () => {
