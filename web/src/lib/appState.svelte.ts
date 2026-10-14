@@ -6,6 +6,7 @@ import type {
 	ConversationListEntry,
 	TopicCandidate,
 	TopicNeededResponse,
+	TopicResolution,
 	TopicStreamEntry,
 } from "../api"
 import { api, ApiError, bindAuth, errorMessage } from "../api"
@@ -180,6 +181,8 @@ export interface TopicNeededState {
 	/** Category the send targeted. */
 	categoryName: string
 	candidates: TopicCandidate[]
+	/** Conversation group still holding the parked optimistic bubble, so the draft stays visible until the pick resolves. Detached (no-op to clear) if the user navigates away first. */
+	parkedGroup: ConversationGroup | null
 }
 
 /**
@@ -218,6 +221,10 @@ class AppState {
 	loadingStream = $state(false)
 	sending = $state(false)
 	pendingChat = $state<PendingChat | null>(null)
+	/** Send phase the chat area shows as progress: "topic" while /topic picks a topic for a topicless send, "reply" while /chat generates. Null when idle. */
+	pendingPhase = $state<"topic" | "reply" | null>(null)
+	/** Topic name the /topic step resolved (or that was already selected); shown while the reply generates. */
+	pendingTopic = $state<string | null>(null)
 	/** In-flight post-send categories/stream refresh; next sends serialize behind it. */
 	refreshPromise: Promise<void> | null = null
 	/** In-flight /categories fetch; concurrent callers join it instead of stacking duplicate requests. */
@@ -279,14 +286,17 @@ class AppState {
 	}
 
 	/**
-	 * Selects a topic within a category and (re)loads its stream.
+	 * Selects a topic within a category and (re)loads its stream. Navigation clears the
+	 * stream first (instant context switch); the post-send follow passes keepStream — the
+	 * optimistic reply group already on screen is correct and must survive the switch,
+	 * with loadStream's merge reconciling it instead of blanking and refilling the chat.
 	 */
-	selectTopic(categoryId: number, topicId: number): void {
+	selectTopic(categoryId: number, topicId: number, opts?: { keepStream?: boolean }): void {
 		this.selectionEpoch++
 		this.categoryId = categoryId
 		this.topicId = topicId
 		this.pendingCategoryName = ""
-		this.stream = []
+		if (!opts?.keepStream) this.stream = []
 		void this.loadStream()
 	}
 
@@ -320,10 +330,10 @@ class AppState {
 	/**
 	 * Selects a topic by id (used after /chat returns topicId for autogen or a new topic).
 	 */
-	selectTopicById(topicId: number): void {
+	selectTopicById(topicId: number, opts?: { keepStream?: boolean }): void {
 		for (const cat of this.categories ?? []) {
 			if (cat.topics.some((t) => t.id === topicId)) {
-				this.selectTopic(cat.id, topicId)
+				this.selectTopic(cat.id, topicId, opts)
 				return
 			}
 		}
@@ -360,20 +370,27 @@ class AppState {
 			const query = `category=${encodeURIComponent(cat.name)}&topic=${encodeURIComponent(topic.name)}`
 			const entries = await api<TopicStreamEntry[]>("GET", `/topic-stream?${query}`)
 			if (this.selectionEpoch !== epoch) return
+			// Merge, don't replace: groups already on screen (including the one carrying the
+			// just-confirmed send) are reused and updated in place, so the keyed rows keep
+			// their DOM identity and the post-send refresh doesn't visibly rebuild the chat.
+			const previous = new Map(this.stream.map((g) => [g.id, g]))
 			this.stream = entries
-				.map((entry) => ({
-					id: entry.id,
-					createdAt: entry.created_at,
-					summarized:
-						topic.updated_at_timestamp !== 0 &&
-						entry.created_at < topic.updated_at_timestamp,
-					messages: entry.messages.map((m: ChatMessage, index: number) => ({
+				.map((entry) => {
+					const prev = previous.get(entry.id)
+					const messages: StreamMessage[] = entry.messages.map((m: ChatMessage, index: number) => ({
 						...m,
 						conversationId: entry.id,
 						index,
 						createdAt: entry.created_at,
-					})),
-				}))
+					}))
+					if (prev && !prev.messages.some((m) => m.pending)) {
+						prev.createdAt = entry.created_at
+						prev.summarized = topic.updated_at_timestamp !== 0 && entry.created_at < topic.updated_at_timestamp
+						prev.messages = messages
+						return prev
+					}
+					return { id: entry.id, createdAt: entry.created_at, summarized: topic.updated_at_timestamp !== 0 && entry.created_at < topic.updated_at_timestamp, messages }
+				})
 				.filter((g) => g.messages.length > 0)
 		} catch (err) {
 			pushToast(`Couldn't load this topic's messages — ${errorMessage(err)}`, "error")
@@ -383,16 +400,35 @@ class AppState {
 	}
 
 	/**
-	 * Sends a message: appends an optimistic user bubble, posts to /chat, renders the
-	 * assistant reply immediately from the response, then refreshes categories and the
-	 * stream in the background. The category resolves to an explicit override, else the
-	 * staged ghost tab name, else the selected tab; the topic resolves to an explicit
-	 * override (autotopic picker), else the selected topic, else autogen. On a 422
-	 * autotopic gate response nothing is stored and the draft waits in a candidate picker
-	 * (topicNeeded). Returns true when the send was accepted (or parked for topic
-	 * picking); on failure the optimistic bubble is removed and the caller should restore
-	 * the draft. When a chat executor is bound (demo), the payload goes to it instead of
-	 * the network.
+	 * Removes the optimistic pending bubble from the send's conversation group, dropping the group when it was created for this send and never got a server id.
+	 */
+	#dropPendingBubble(group: ConversationGroup): void {
+		group.messages = group.messages.filter((m) => !m.pending)
+		if (group.id === -1 && group.messages.length === 0) this.stream = this.stream.filter((g) => g !== group)
+	}
+
+	/**
+	 * Removes a topic-gate's parked optimistic bubble (the draft stays visible until the pick resolves, so the chat never empties out behind the picker). Detached group = user navigated away, nothing to clean.
+	 */
+	#clearParked(need: TopicNeededState): void {
+		if (!need.parkedGroup) return
+		if (!this.stream.includes(need.parkedGroup)) return
+		this.#dropPendingBubble(need.parkedGroup)
+	}
+
+	/**
+	 * Sends a message: appends an optimistic user bubble, resolves the topic when none is
+	 * selected (a dedicated POST /topic call, so topic selection shows as its own progress
+	 * phase and the 422 candidate picker arrives before the reply request), posts to /chat
+	 * with the resolved topic, renders the assistant reply immediately from the response,
+	 * then refreshes categories and the stream in the background. The category resolves to
+	 * an explicit override, else the staged ghost tab name, else the selected tab; the topic
+	 * resolves to an explicit override (autotopic picker), else the selected topic, else the
+	 * /topic call. On a 422 autotopic gate response nothing is stored and the draft waits in
+	 * a candidate picker (topicNeeded). Returns true when the send was accepted (or parked
+	 * for topic picking); on failure the optimistic bubble is removed and the caller should
+	 * restore the draft. When a chat executor is bound (demo), the payload goes to it
+	 * instead of the network, skipping the /topic step — the demo's topics are pregenerated.
 	 *
 	 * Arrow field on purpose: Svelte 5 compiles bare method references passed as props
 	 * (onsend={app.sendMessage}) into calls on the props object, so a regular method
@@ -400,7 +436,11 @@ class AppState {
 	 */
 	sendMessage = async (text: string, noteMode: boolean, categoryName?: string, topicOverride?: string): Promise<boolean> => {
 		if (this.refreshPromise) await this.refreshPromise
-		this.topicNeeded = null
+		if (this.topicNeeded) {
+			// A new send supersedes a parked pick: discard its optimistic bubble with it.
+			this.#clearParked(this.topicNeeded)
+			this.topicNeeded = null
+		}
 
 		const catName = categoryName || this.pendingCategoryName || this.selectedCategory?.name
 		if (!catName) {
@@ -408,9 +448,6 @@ class AppState {
 			return false
 		}
 		const topicName = topicOverride?.trim() || this.selectedTopic?.name || ""
-
-		const payload: Record<string, unknown> = { category: catName, message: text, noteMode }
-		if (topicName) payload.topic = topicName
 
 		const nowSec = Math.floor(Date.now() / 1000)
 		const lastGroup = this.stream.at(-1)
@@ -428,21 +465,38 @@ class AppState {
 
 		this.sending = true
 		const sentEpoch = this.selectionEpoch
-		const promise = chatExecutor ? chatExecutor(payload) : api<ChatResponse>("POST", "/chat", payload)
-		let pc: PendingChat = {
-			promise,
-			category: catName,
-			topic: topicName,
-			draft: text,
-			noteMode,
-			startedAt: nowSec,
-			recovered: false,
-		}
-		this.pendingChat = pc
-		// Reading the field back yields the reactive proxy instance; identity checks
-		// and the recovered flag must run against that same instance, not the raw object.
-		pc = this.pendingChat as PendingChat
+		let pc: PendingChat | null = null
 		try {
+			// Topic-first split: when no topic is selected, resolve it before the reply request
+			// so the UI can show real progress. The outer catch parks a 422 gate response in
+			// the candidate picker; any other /topic failure fails the send — /chat no longer
+			// autogens its own topic.
+			let resolvedTopic = topicName
+			if (!resolvedTopic && !chatExecutor) {
+				this.pendingPhase = "topic"
+				const res = await api<TopicResolution>("POST", "/topic", { category: catName, message: text })
+				resolvedTopic = res.topic
+			}
+			this.pendingTopic = resolvedTopic || null
+			this.pendingPhase = "reply"
+
+			const payload: Record<string, unknown> = { category: catName, message: text, noteMode }
+			if (resolvedTopic) payload.topic = resolvedTopic
+			const promise = chatExecutor ? chatExecutor(payload) : api<ChatResponse>("POST", "/chat", payload)
+			const raw: PendingChat = {
+				promise,
+				category: catName,
+				topic: resolvedTopic,
+				draft: text,
+				noteMode,
+				startedAt: nowSec,
+				recovered: false,
+			}
+			this.pendingChat = raw
+			// Reading the field back yields the reactive proxy instance; identity checks
+			// and the recovered flag must run against that same instance, not the raw object.
+			pc = this.pendingChat as PendingChat
+
 			const res = await promise
 
 			// Render the reply immediately from the response; server truth follows in the background.
@@ -468,20 +522,19 @@ class AppState {
 			return true
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 422 && isTopicNeeded(err.body)) {
-				group.messages = group.messages.filter((m) => !m.pending)
-				if (group.id === -1 && group.messages.length === 0)
-					this.stream = this.stream.filter((g) => g !== group)
-				this.topicNeeded = { draft: text, noteMode, categoryName: catName, candidates: err.body.candidates }
+				// Park, don't drop: the bubble stays visible behind the picker so the chat
+				// never empties out; the pick/cancel/new-send paths clear it.
+				this.topicNeeded = { draft: text, noteMode, categoryName: catName, candidates: err.body.candidates, parkedGroup: group }
 				return true
 			}
-			group.messages = group.messages.filter((m) => !m.pending)
-			if (group.id === -1 && group.messages.length === 0)
-				this.stream = this.stream.filter((g) => g !== group)
-			if (!pc.recovered) pushToast(`Send failed — ${errorMessage(err)}`, "error")
-			return pc.recovered
+			this.#dropPendingBubble(group)
+			if (!pc?.recovered) pushToast(`Send failed — ${errorMessage(err)}`, "error")
+			return pc?.recovered ?? false
 		} finally {
 			this.sending = false
-			if (this.pendingChat === pc) this.pendingChat = null
+			this.pendingPhase = null
+			this.pendingTopic = null
+			if (pc && this.pendingChat === pc) this.pendingChat = null
 		}
 	}
 
@@ -497,7 +550,7 @@ class AppState {
 			await this.loadCategories(true)
 			if (this.selectionEpoch !== sentEpoch) return
 			if (res.topicId != null && res.topicId !== this.topicId) {
-				this.selectTopicById(res.topicId)
+				this.selectTopicById(res.topicId, { keepStream: true })
 			} else if (this.pendingCategoryName && this.pendingCategoryName === sentCategory) {
 				const cat = this.categories?.find((c) => c.name === sentCategory)
 				if (cat && cat.id !== this.categoryId) this.selectCategory(cat.id)
@@ -518,6 +571,7 @@ class AppState {
 		const parked = this.topicNeeded
 		if (!parked) return
 		this.topicNeeded = null
+		this.#clearParked(parked)
 		const cat = this.categories?.find((c) => c.name === parked.categoryName)
 		if (cat && cat.id !== this.categoryId) {
 			this.selectionEpoch++
@@ -533,6 +587,7 @@ class AppState {
 	 */
 	cancelTopicNeeded(): string | null {
 		const parked = this.topicNeeded
+		if (parked) this.#clearParked(parked)
 		this.topicNeeded = null
 		return parked?.draft ?? null
 	}

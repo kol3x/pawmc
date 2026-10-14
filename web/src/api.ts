@@ -57,10 +57,15 @@ export interface TopicCandidate {
 	description?: string
 }
 
-/** 422 /chat response when the autotopic confidence gate is too low: nothing was stored. */
+/** 422 /chat or /topic response when the autotopic confidence gate is too low: nothing was stored. */
 export interface TopicNeededResponse {
 	topicNeeded: true
 	candidates: TopicCandidate[]
+}
+
+/** 200 /topic response: the labeler picked this topic confidently; the topic row is only created by the later /chat call. */
+export interface TopicResolution {
+	topic: string
 }
 
 export type SummaryType = "category" | "topic"
