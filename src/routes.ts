@@ -8,9 +8,14 @@ import type { Env, MutationResult } from "./index"
 
 const ChatRequest = z.object({
   category: z.string().trim().min(1),
-  topic: z.string().trim().optional(),
+  topic: z.string().trim().min(1),
   message: z.string().trim().min(1),
   noteMode: z.boolean().optional(),
+})
+
+const TopicRequest = z.object({
+  category: z.string().trim().min(1),
+  message: z.string().trim().min(1),
 })
 
 const UpdateSummaryRequest = z.object({
@@ -102,11 +107,27 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       const body = await parseJsonBody(request)
       if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 })
       const parsed = ChatRequest.safeParse(body)
-      if (!parsed.success) return Response.json({ error: "category and message are required" }, { status: 400 })
+      if (!parsed.success) return Response.json({ error: "category, topic and message are required" }, { status: 400 })
       const { category, topic, message, noteMode } = parsed.data
 
-      console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic || "(autogen)"}, noteMode=${!!noteMode}`)
-      const result = await stub.chat(category, topic || "", message, !!noteMode)
+      console.log(`[INFO][${stage}] Chat request: category=${category}, topic=${topic}, noteMode=${!!noteMode}`)
+      return Response.json(await stub.chat(category, topic, message, !!noteMode))
+    }
+
+    /**
+     * POST /topic - Resolves the topic for a message without storing anything, via the
+     * same labeler + confidence gate as /chat's autogen: 200 {topic} when a topic is
+     * picked confidently, 422 topicNeeded with candidates when the caller should offer
+     * one-click choices. Lets the frontend run topic selection as its own phase.
+     */
+    if (request.method === "POST" && url.pathname === "/topic") {
+      const body = await parseJsonBody(request)
+      if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+      const parsed = TopicRequest.safeParse(body)
+      if (!parsed.success) return Response.json({ error: "category and message are required" }, { status: 400 })
+
+      console.log(`[INFO][${stage}] Topic request: category=${parsed.data.category}`)
+      const result = await stub.topicFor(parsed.data.category, parsed.data.message)
       if ("topicNeeded" in result) return Response.json(result, { status: 422 })
       return Response.json(result)
     }

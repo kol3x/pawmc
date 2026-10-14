@@ -410,47 +410,28 @@ it("deletes a category with nested topics and conversations", async () => {
   expect(after.body.find((c) => c.name === "qa-del-cat")).toBeUndefined()
 })
 
-it("generates a new topic when the chat starts without one", async () => {
-  const { bodies } = stubOpenRouter([
-    '{"candidates":[{"topic":"project kickoff","confidence":0.95,"description":"planning the project kickoff"}]}',
-    "Hello! Ready when you are.",
-  ])
-  const result = await postJson<ChatResult>("/chat", {
-    category: "qa-autogen",
-    message: "let's plan the project kickoff for next week",
-  })
-  expect(result.status).toBe(200)
-  expect(result.body.topic).toBe("project kickoff")
-  expect(result.body.topicId).toBeGreaterThan(0)
-  const topic = await findTopic("qa-autogen", "project kickoff")
-  expect(topic.id).toBe(result.body.topicId)
-
-  const categories = await fetchJson<CategoryRow[]>("/categories")
-  expect(categories.body.find((c) => c.name === "qa-autogen")?.topics[0]?.micro_summary).toBe("planning the project kickoff")
-
-  expect(bodies).toHaveLength(2)
-  expect(bodies[0]?.model).toBe("z-ai/glm-5.3-flash")
-  expect(bodies[0]?.provider?.sort).toBe("throughput")
-  expect(bodies[0]?.reasoning).toEqual({ effort: "low" })
-  expect(bodies[0]?.messages.at(-1)?.content).toContain("plan the project kickoff")
-  expect(bodies[1]?.model).toBe("test-model")
-  expect(bodies[1]?.provider?.sort).toBe("price")
-  expect(bodies[1]?.reasoning).toBeUndefined()
-  expect(bodies[1]?.messages[0]?.content).toContain("qa-autogen / project kickoff")
+it("requires a topic: /chat no longer autogens", async () => {
+  const result = await postJson("/chat", { category: "qa-no-topic", message: "hello without a topic" })
+  expect(result.status).toBe(400)
+  expect(result.body).toMatchObject({ error: "category, topic and message are required" })
 })
 
-it("reuses an existing topic matched case-insensitively by autogen", async () => {
-  stubOpenRouter(["hello-reply", '{"candidates":[{"topic":"Project Kickoff","confidence":0.95}]}', "second reply"])
+it("topic resolution reuses an existing topic matched case-insensitively", async () => {
+  stubOpenRouter(["hello-reply", '{"candidates":[{"topic":"Project Kickoff","confidence":0.95}]}'])
   const first = await chat("qa-autogen-match", "project kickoff", "hello")
-  const second = await postJson<ChatResult>("/chat", { category: "qa-autogen-match", message: "more kickoff planning" })
-  expect(second.status).toBe(200)
-  expect(second.body.topic).toBe("project kickoff")
-  expect(second.body.conversationId).toBe(first.conversationId)
+
+  const resolved = await postJson<{ topic: string; topicId: number }>("/topic", {
+    category: "qa-autogen-match",
+    message: "more kickoff planning",
+  })
+  expect(resolved.status).toBe(200)
+  expect(resolved.body.topic).toBe("project kickoff")
+  expect(resolved.body.topicId).toBe(first.topicId)
 })
 
-it("falls back to the message's first words when the autogen reply is unusable", async () => {
-  stubOpenRouter(["no json here, sorry", "ok"])
-  const result = await postJson<ChatResult>("/chat", {
+it("falls back to the message's first words when the labeler reply is unusable", async () => {
+  stubOpenRouter(["no json here, sorry"])
+  const result = await postJson<{ topic: string; topicId: number }>("/topic", {
     category: "qa-autogen-fallback",
     message: "quarterly budget planning session with the team",
   })
@@ -458,10 +439,19 @@ it("falls back to the message's first words when the autogen reply is unusable",
   expect(result.body.topic).toBe("quarterly budget planning session with")
 })
 
-it("generates a topic for note mode too", async () => {
-  stubOpenRouter(['{"candidates":[{"topic":"meeting notes","confidence":0.95}]}', "saved"])
+it("resolves a topic for note mode through the same /topic step", async () => {
+  stubOpenRouter(['{"candidates":[{"topic":"meeting notes","confidence":0.95}]}'])
+  const resolved = await postJson<{ topic: string; topicId: number }>("/topic", {
+    category: "qa-notes-auto",
+    message: "meeting with Anna about budgets",
+  })
+  expect(resolved.status).toBe(200)
+  expect(resolved.body.topic).toBe("meeting notes")
+
+  stubOpenRouter("saved")
   const result = await postJson<ChatResult>("/chat", {
     category: "qa-notes-auto",
+    topic: resolved.body.topic,
     message: "meeting with Anna about budgets",
     noteMode: true,
   })
@@ -470,32 +460,41 @@ it("generates a topic for note mode too", async () => {
   await findTopic("qa-notes-auto", "meeting notes")
 })
 
-it("applies the confidence gate to note mode too", async () => {
-  stubOpenRouter(["saved", '{"candidates":[{"topic":"meeting notes","confidence":0.4}]}'])
-  await chat("qa-notes-gate", "meeting notes", "note one")
+it("parks note-mode sends at the topic gate, then saves under the picked topic", async () => {
+  stubOpenRouter(['{"candidates":[{"topic":"meeting notes","confidence":0.4}]}'])
+  const gate = await postJson<TopicNeededResult>("/topic", { category: "qa-notes-gate", message: "another meeting note" })
+  expect(gate.status).toBe(422)
+  expect(gate.body.topicNeeded).toBe(true)
 
-  const result = await postJson<TopicNeededResult>("/chat", { category: "qa-notes-gate", message: "another meeting note", noteMode: true })
-  expect(result.status).toBe(422)
-  expect(result.body.topicNeeded).toBe(true)
+  stubOpenRouter("saved")
+  const saved = await postJson<ChatResult>("/chat", {
+    category: "qa-notes-gate",
+    topic: "meeting notes",
+    message: "another meeting note",
+    noteMode: true,
+  })
+  expect(saved.status).toBe(200)
+  expect(saved.body.response).toBe("saved")
 })
 
 it("asks the user when topic confidence is low", async () => {
   stubOpenRouter([
     "hello",
     '{"candidates":[{"topic":"quarterly report","confidence":0.3},{"topic":"budget planning","confidence":0.25,"description":"planning budgets"}]}',
-    "picked reply",
   ])
   await chat("qa-lowconf", "quarterly report", "hello")
 
-  const result = await postJson<TopicNeededResult>("/chat", { category: "qa-lowconf", message: "some budget planning question" })
+  const result = await postJson<TopicNeededResult>("/topic", { category: "qa-lowconf", message: "some budget planning question" })
   expect(result.status).toBe(422)
   expect(result.body.topicNeeded).toBe(true)
   expect(result.body.candidates[0]).toMatchObject({ name: "quarterly report", confidence: 0.3, exists: true })
   expect(result.body.candidates[1]).toMatchObject({ name: "budget planning", confidence: 0.25, exists: false, description: "planning budgets" })
 
+  // Nothing stored on a gate response.
   const listed = await fetchJson<ConversationListEntry[]>("/conversations?category=qa-lowconf")
   expect(listed.body).toHaveLength(1)
 
+  stubOpenRouter("picked reply")
   const chosen = await postJson<ChatResult>("/chat", {
     category: "qa-lowconf",
     topic: "budget planning",
@@ -505,17 +504,82 @@ it("asks the user when topic confidence is low", async () => {
   expect(chosen.body.topic).toBe("budget planning")
 })
 
+it("two-step flow: POST /topic resolves, POST /chat replies under the resolved topic", async () => {
+  const { bodies } = stubOpenRouter([
+    '{"candidates":[{"topic":"project kickoff","confidence":0.95,"description":"planning the project kickoff"}]}',
+    "Hello! Ready when you are.",
+  ])
+  const result = await postJson<{ topic: string; topicId: number }>("/topic", {
+    category: "qa-topic-step",
+    message: "let's plan the project kickoff for next week",
+  })
+  expect(result.status).toBe(200)
+  expect(result.body.topic).toBe("project kickoff")
+  expect(result.body.topicId).toBeGreaterThan(0)
+
+  // The labeler call is tuned to the baked-in model: throughput sort, low reasoning effort.
+  expect(bodies[0]?.model).toBe("z-ai/glm-5.3-flash")
+  expect(bodies[0]?.provider?.sort).toBe("throughput")
+  expect(bodies[0]?.reasoning).toEqual({ effort: "low" })
+  expect(bodies[0]?.messages.at(-1)?.content).toContain("plan the project kickoff")
+
+  // The topic row already exists with the labeler description as its initial micro summary.
+  const topic = await findTopic("qa-topic-step", "project kickoff")
+  expect(topic.id).toBe(result.body.topicId)
+  const categories = await fetchJson<CategoryRow[]>("/categories")
+  expect(categories.body.find((c) => c.name === "qa-topic-step")?.topics[0]?.micro_summary).toBe("planning the project kickoff")
+
+  // The reply call is the plain main model: price sort, no reasoning override.
+  const sent = await postJson<ChatResult>("/chat", {
+    category: "qa-topic-step",
+    topic: result.body.topic,
+    message: "let's plan the project kickoff for next week",
+  })
+  expect(sent.status).toBe(200)
+  expect(sent.body.topic).toBe("project kickoff")
+  expect(sent.body.topicId).toBe(result.body.topicId)
+  expect(bodies[1]?.model).toBe("test-model")
+  expect(bodies[1]?.provider?.sort).toBe("price")
+  expect(bodies[1]?.reasoning).toBeUndefined()
+  expect(bodies[1]?.messages[0]?.content).toContain("qa-topic-step / project kickoff")
+})
+
+it("POST /topic gates on low confidence with candidates and stores nothing", async () => {
+  stubOpenRouter(['{"candidates":[{"topic":"quarterly report","confidence":0.3},{"topic":"budget planning","confidence":0.25}]}'])
+  const result = await postJson<TopicNeededResult>("/topic", {
+    category: "qa-topic-gate",
+    message: "some budget planning question",
+  })
+  expect(result.status).toBe(422)
+  expect(result.body.topicNeeded).toBe(true)
+  expect(result.body.candidates[0]).toMatchObject({ name: "quarterly report", confidence: 0.3, exists: false })
+  expect(result.body.candidates[1]).toMatchObject({ name: "budget planning", confidence: 0.25, exists: false })
+
+  const category = await findCategory("qa-topic-gate")
+  expect(category.topics).toHaveLength(0)
+})
+
+it("rejects POST /topic without a category or message", async () => {
+  const missing = await postJson("/topic", { category: "qa-topic-invalid" })
+  expect(missing.status).toBe(400)
+  const empty = await postJson("/topic", { category: "qa-topic-invalid", message: "" })
+  expect(empty.status).toBe(400)
+})
+
 it("trims long messages for the labeling call only", async () => {
   const { bodies } = stubOpenRouter(['{"candidates":[{"topic":"long doc","confidence":0.95}]}', "ok"])
   const blob = "beginning " + "m".repeat(1300) + " ending"
-  const result = await postJson<ChatResult>("/chat", { category: "qa-trim", message: blob })
-  expect(result.status).toBe(200)
+  const resolved = await postJson<{ topic: string }>("/topic", { category: "qa-trim", message: blob })
+  expect(resolved.status).toBe(200)
 
   const labelMessage = bodies[0]?.messages.at(-1)?.content ?? ""
   expect(labelMessage).toContain("beginning")
   expect(labelMessage).toContain("ending")
   expect(labelMessage).toContain("[...]")
   expect(labelMessage.length).toBeLessThan(1200)
+
+  const sent = await postJson<ChatResult>("/chat", { category: "qa-trim", topic: resolved.body.topic, message: blob })
+  expect(sent.status).toBe(200)
 
   const responseMessage = bodies[1]?.messages.at(-1)?.content ?? ""
   expect(responseMessage).toBe(blob)

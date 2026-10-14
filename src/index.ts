@@ -202,17 +202,18 @@ export class AssistantDurableObject extends DurableObject<Env> {
   /**
    * Processes a user message within a specified category and topic, generates an AI response using the stored conversation history and summary context, and updates the conversation. If the category or topic doesn't exist, it will be created.
    *
+   * The topic must be resolved beforehand: topicFor() (the POST /topic path) or an
+   * explicit topic selection. This method stores and replies, it does not label.
+   *
    * Reuses the topic's latest conversation only if it was created at or after the topic's last
    * summary update (i.e. it hasn't been folded into the summary yet). Otherwise, since the
    * existing conversation is considered already summarized, a new conversation is started.
-   *
-   * When the topic is empty, the light labeling model ranks topic candidates with confidence: at TOPIC_CONFIDENCE_MIN or above the top candidate proceeds like an explicit topic (new labels also carry a one-sentence micro summary), below it a TopicNeededResult is returned with nothing stored so the caller can offer one-click choices.
    */
-  async chat(category: string, topic: string, userMessage: string, noteMode: boolean = false): Promise<ChatResult | TopicNeededResult> {
+  async chat(category: string, topic: string, userMessage: string, noteMode: boolean = false): Promise<ChatResult> {
     const stage = "chat"
     try {
-      if (!category?.trim() || !userMessage?.trim())
-        throw new Error(`[${stage}] Invalid input: category and userMessage are required`)
+      if (!category?.trim() || !topic?.trim() || !userMessage?.trim())
+        throw new Error(`[${stage}] Invalid input: category, topic and userMessage are required`)
 
       const categoryRow = this.#db
         .exec(
@@ -222,31 +223,13 @@ export class AssistantDurableObject extends DurableObject<Env> {
         .one()
       console.log(`[INFO][${stage}] Category resolved: id=${categoryRow.id}, name=${category}`)
 
-      const providedTopic = topic?.trim() || ""
-      let topicName = providedTopic
-      let newTopicMicro: string | undefined
-
-      if (!topicName) {
-        const resolved = await resolveTopic(this.env, this.#db, Number(categoryRow.id), userMessage.trim())
-        if (resolved.topic) {
-          topicName = resolved.topic
-        } else {
-          const top = resolved.candidates[0]
-          if (!top || top.confidence < TOPIC_CONFIDENCE_MIN) {
-            console.log(`[INFO][${stage}] Topic confidence too low, asking user: candidates=${resolved.candidates.length}`)
-            return { topicNeeded: true, candidates: resolved.candidates }
-          }
-          topicName = top.name
-          newTopicMicro = top.description
-        }
-      }
+      const topicName = topic.trim()
 
       const topicRow = this.#db
         .exec(
-          `INSERT INTO topics (category_id, name, micro_summary) VALUES (?, ?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary, updated_at_timestamp`,
+          `INSERT INTO topics (category_id, name, micro_summary) VALUES (?, ?, '') ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id, summary, updated_at_timestamp`,
           categoryRow.id,
           topicName,
-          newTopicMicro || "",
         )
         .one()
       console.log(`[INFO][${stage}] Topic resolved: id=${topicRow.id}, name=${topicName}`)
@@ -324,6 +307,53 @@ export class AssistantDurableObject extends DurableObject<Env> {
       console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
       throw err
     }
+  }
+
+  /**
+   * Resolves the topic for a message as its own step, so the frontend can show topic selection as a distinct phase and offer the candidate picker before the reply request. Same labeler call and confidence gate as the old chat() autogen. On a confident pick the topic row is created here — an existing topic keeps its stored micro summary, a new label stores the labeler description as its initial micro summary — so the topic appears in the UI immediately and chat() finds it by name. Low confidence returns TopicNeededResult with candidates and stores nothing.
+   */
+  async topicFor(category: string, userMessage: string): Promise<{ topic: string; topicId: number } | TopicNeededResult> {
+    const stage = "topicFor"
+    try {
+      if (!category?.trim() || !userMessage?.trim())
+        throw new Error(`[${stage}] Invalid input: category and userMessage are required`)
+
+      const categoryRow = this.#db
+        .exec(
+          `INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=name RETURNING id`,
+          category.trim(),
+        )
+        .one()
+
+      const resolved = await resolveTopic(this.env, this.#db, Number(categoryRow.id), userMessage.trim())
+      if (resolved.topic) {
+        return { topic: resolved.topic, topicId: this.#upsertTopic(Number(categoryRow.id), resolved.topic, "") }
+      }
+      const top = resolved.candidates[0]
+      if (!top || top.confidence < TOPIC_CONFIDENCE_MIN) {
+        console.log(`[INFO][${stage}] Topic confidence too low, asking user: candidates=${resolved.candidates.length}`)
+        return { topicNeeded: true, candidates: resolved.candidates }
+      }
+      return { topic: top.name, topicId: this.#upsertTopic(Number(categoryRow.id), top.name, top.description || "") }
+    } catch (err) {
+      console.error(`[ERROR][${stage}] ${errorMessage(err)}`)
+      throw err
+    }
+  }
+
+  /**
+   * Creates the category's topic row when missing (idempotent), returning its id. An existing topic keeps its stored micro summary; a new one starts with the given initial micro summary. Used by the topic-resolution path; chat() upserts inline because it also needs the summary and freshness watermark columns back.
+   */
+  #upsertTopic(categoryId: number, topicName: string, initialMicro: string): number {
+    const row = this.#db
+      .exec(
+        `INSERT INTO topics (category_id, name, micro_summary) VALUES (?, ?, ?) ON CONFLICT(category_id, name) DO UPDATE SET name=name RETURNING id`,
+        categoryId,
+        topicName,
+        initialMicro,
+      )
+      .one()
+    return Number(row.id)
   }
 
   /**
