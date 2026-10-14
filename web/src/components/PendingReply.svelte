@@ -17,7 +17,9 @@ interface Props {
 let { oncancel }: Props = $props()
 
 const inFlight = $derived(app.sending && app.pendingPhase)
-const label = $derived(app.pendingPhase === "topic" ? "Picking a topic…" : "Writing…")
+const label = $derived(
+	app.pendingPhase === "topic" ? "Picking a topic…" : app.pendingTopic ? `Replying on ${app.pendingTopic}` : "Writing…",
+)
 
 let customName = $state("")
 
@@ -86,12 +88,7 @@ function cancel() {
 					: 'border border-line bg-panel'}"
 			>
 				<svg class="shrink-0 animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.6" /></svg>
-				<span class="text-sm leading-relaxed md:text-base">{label}</span>
-				{#if app.pendingTopic}
-					<span class="max-w-[14rem] truncate rounded-full border border-line px-2 py-0.5 text-[10px] uppercase tracking-wide text-faint">
-						{app.pendingTopic}
-					</span>
-				{/if}
+				<span class="truncate text-sm leading-relaxed md:text-base">{label}</span>
 			</div>
 		</div>
 	</div>
