@@ -65,7 +65,7 @@ const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3"
  */
 const LABELER_MODEL = "z-ai/glm-5.3-flash"
 const DEFAULT_SYSTEM_INSTRUCTION =
-  "User values succinct and direct outputs without extra formatting, warnings, and politeness."
+  "User values succinct and direct outputs without extra formatting, warnings, and politeness. Don't repeat user's message without adding value."
 
 /**
  * Resolves the AI provider: an explicit `AI_PROVIDER` override wins, otherwise the presence of an OpenRouter key selects OpenRouter and its absence falls back to Workers AI.
