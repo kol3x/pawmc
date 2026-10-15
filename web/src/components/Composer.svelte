@@ -7,14 +7,19 @@ interface Props {
 }
 
 /**
- * Message composer: auto-growing textarea (generously sized by default) plus note mode.
+ * Message composer: auto-growing textarea (generously sized by default) with two stacked
+ * send buttons on the right — "Send" posts a normal message, "Send note" posts it as a
+ * kept-as-context note with no reply (also via Ctrl/Cmd+Enter, no mouse needed).
  * Category and topic naming live in the header's tab/chip rows; the composer only sends.
  */
 let { onsend }: Props = $props()
 
 let draft = $state("")
-let noteMode = $state(false)
 let textareaEl = $state<HTMLTextAreaElement | null>(null)
+
+/** Macs use Cmd+Enter for the note keybind — plain Ctrl+Enter opens the context menu there. */
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+const noteKeyHint = isMac ? "⌘+Enter" : "Ctrl+Enter"
 
 export function focus() {
 	textareaEl?.focus()
@@ -34,13 +39,16 @@ function autoGrow() {
 
 function onKeydown(e: KeyboardEvent) {
 	if (e.isComposing) return
-	if (e.key === "Enter" && !e.shiftKey) {
+	if (e.key !== "Enter" || e.shiftKey) return
+	const wantsNote = isMac ? e.metaKey : e.ctrlKey
+	if (wantsNote || (!e.ctrlKey && !e.metaKey)) {
 		e.preventDefault()
-		void send()
+		void send(wantsNote)
 	}
 }
 
-async function send() {
+/** Sends the draft; note mode keeps it as context without triggering a reply. */
+async function send(noteMode = false) {
 	const text = draft.trim()
 	if (!text || app.sending) return
 	draft = ""
@@ -55,16 +63,6 @@ async function send() {
 </script>
 <div class="border-t border-line bg-panel/60 p-3">
 	<div class="flex items-end gap-2">
-		<button
-			class="flex h-9 shrink-0 items-center rounded-lg border px-2.5 text-xs font-medium transition-colors {noteMode
-				? 'border-accent bg-accent-soft text-accent'
-				: 'border-line text-dim hover:text-ink'}"
-			onclick={() => (noteMode = !noteMode)}
-			aria-pressed={noteMode}
-			title="Save as a note — kept as context, no reply"
-		>
-			Note
-		</button>
 		<div class="relative flex-1">
 			<textarea
 				bind:this={textareaEl}
@@ -72,8 +70,8 @@ async function send() {
 				oninput={autoGrow}
 				onkeydown={onKeydown}
 				rows="4"
-				placeholder={noteMode ? "Write a note (no reply)…" : "What's on your mind…"}
-				class="max-h-72 min-h-24 w-full resize-none rounded-xl border border-line bg-bg px-3.5 py-2.5 pr-16 text-base leading-relaxed placeholder:text-faint focus:border-accent focus:outline-none"
+				placeholder="What's on your mind…"
+				class="block max-h-72 min-h-24 w-full resize-none rounded-xl border border-line bg-bg px-3.5 py-2.5 pr-16 text-base leading-relaxed placeholder:text-faint focus:border-accent focus:outline-none"
 			></textarea>
 			<div class="absolute bottom-2 right-2.5 text-[10px] leading-none text-faint">
 				{#if app.sending}
@@ -83,16 +81,28 @@ async function send() {
 				{/if}
 			</div>
 		</div>
-		<button
-			class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-white transition-colors hover:bg-accent/85 disabled:opacity-40"
-			disabled={!draft.trim() || app.sending}
-			onclick={() => void send()}
-			aria-label="Send"
-		>
-			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
-		</button>
+		<div class="flex shrink-0 flex-col gap-1.5">
+			<button
+				class="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+				disabled={!draft.trim() || app.sending}
+				onclick={() => void send(true)}
+				aria-label="Send note"
+				title="Save as a note — kept as context, no reply ({noteKeyHint})"
+			>
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+			</button>
+			<button
+				class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white transition-colors hover:bg-accent/85 disabled:opacity-40"
+				disabled={!draft.trim() || app.sending}
+				onclick={() => void send(false)}
+				aria-label="Send"
+				title="Send a message and get a reply (Enter)"
+			>
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
+			</button>
+		</div>
 	</div>
 	<div class="mt-1.5 hidden px-1 text-[10px] text-faint sm:flex">
-		<span>Enter to send · Shift+Enter for a new line</span>
+		<span>Enter to send · {noteKeyHint} to send a note · Shift+Enter for a new line</span>
 	</div>
 </div>
