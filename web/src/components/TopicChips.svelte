@@ -17,8 +17,9 @@ interface Props {
  * Topic chip row for the active diary, most recently updated first. Chips past the
  * row's width collapse behind an edge chevron that expands a multiline extension
  * panel below the row: the same full chips (rename/delete kebab on every entry, freshness dot
- * on non-selected ones) plus a search input that searches all topics of the diary by title or
- * micro summary, including ones already visible in the strip. On mobile the strip chips keep
+ * on non-selected ones) plus a search input that searches all topics of the diary by title
+ * or summary, including ones already visible in the strip. The chevron (and with it the
+ * extension panel) only renders once the diary has at least one topic. On mobile the strip chips keep
  * the kebab only on the selected topic. The
  * panel closes — and the search resets — when a topic is picked or a click lands
  * outside it. The plus chip exits the current topic so the next message gets a
@@ -48,13 +49,14 @@ const overflow = createOverflowSplit({
 
 // Extension contents: the topics the inline row could not fit — or, when nothing overflows,
 // the full list. A search query widens the panel to every topic of the diary matching by title
-// or micro summary, including ones already visible in the strip.
+// or summary, including ones already visible in the strip.
 const extendedTopics = $derived.by(() => {
 	const q = search.trim().toLowerCase()
 	if (q)
 		return orderedTopics.filter(
 			(topic) =>
 				topic.name.toLowerCase().includes(q) ||
+				topic.summary.toLowerCase().includes(q) ||
 				(topic.micro_summary ?? "").toLowerCase().includes(q),
 		)
 	return orderedTopics.slice(overflow.breakIndex ?? 0)
@@ -135,17 +137,19 @@ function pick(topic: TopicSummary) {
 				New topic
 			</button>
 		{/if}
-		<div bind:this={moreEl} data-overflow-trailing class="shrink-0">
-			<button
-				title={extendedOpen ? "Hide extended topics" : "Search and show all topics"}
-				aria-label="More topics"
-				aria-expanded={extendedOpen}
-				class="flex h-7 w-7 items-center justify-center rounded-md text-faint transition-colors hover:bg-panel-2 hover:text-ink"
-				onclick={toggleExtended}
-			>
-				<svg class="transition-transform {extendedOpen ? 'rotate-180' : ''}" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-			</button>
-		</div>
+		{#if (app.selectedCategory?.topics?.length ?? 0) > 0}
+			<div bind:this={moreEl} data-overflow-trailing class="shrink-0">
+				<button
+					title={extendedOpen ? "Hide extended topics" : "Search and show all topics"}
+					aria-label="More topics"
+					aria-expanded={extendedOpen}
+					class="flex h-7 w-7 items-center justify-center rounded-md text-faint transition-colors hover:bg-panel-2 hover:text-ink"
+					onclick={toggleExtended}
+				>
+					<svg class="transition-transform {extendedOpen ? 'rotate-180' : ''}" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	{#if extendedOpen}
