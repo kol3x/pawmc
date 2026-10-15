@@ -2,20 +2,25 @@
 
 A personal LLM assistant that runs on Cloudflare Workers and maintains a user-guided compounding knowledge base across conversations. 
 
-When starting a new conversation, choose which historical context you want it to have by choosing a category and topic. Additional context from new chats is compounded daily or on request.
+When starting a new conversation, choose which historical context you want it to have by choosing a diary and topic. Additional context from new chats is compounded daily or on request.
 
 It's simple and lightweight, and you own your data, pick your model, and control the prompts.
+
+**Try it without deploying:** the [guided demo](https://pawmc-demo.kolaegipet.workers.dev/?demo=1) is a scripted walkthrough of the diary experience — no LLM is running and no data is recorded; it runs on a separate demo instance.
+
+![pawmc — diaries as tabs, auto-generated topics as chips, and the memory panel on the left](docs/screenshot.png)
 
 ## Related posts
 
 - [Dear LLM, or how I stopped getting generic advice](https://kol3x.com/blog/dear-llm-or-how-i-stopped-getting-generic-advice/) — the story behind pawmc
 - [Making LLMs not eat my food, or how I picked up TS](https://kol3x.com/blog/making-llms-not-eat-my-food-or-how-i-picked-up-ts/) — on migrating pawmc to TS
+- [Development updates on X](https://x.com/kol3xcom) — follow along as pawmc evolves
 
 ## Key advantages
 
 ### Compounding context that works
 
-Pawmc asks for a little effort from a user, but the result is predictability of compounding context. Every time you start a chat, you must select a "category" and "topic" (existing or new) and that's exactly where the context will compound. 
+Pawmc asks for a little effort from a user, but the result is predictability of compounding context. Every time you start a chat, you must select a "diary" and "topic" (existing or new) and that's exactly where the context will compound. 
 
 Over time, when you gather context about your fields of interest, you will have multiple context options to use as a background for your new chats. (e.g. "personal", "project-x", "hobby-y", "philosophy")
 
@@ -35,11 +40,13 @@ Deploying and hosting Pawmc on Cloudflare is way under their free tier limits, a
 
 ## Features
 
-- **Conversation Storage**: Stores conversations by category and topic
-- **Context-Aware**: Maintains AI-generated summaries for each category and topic
+- **Diaries and Topics**: Conversations are stored in diaries, organized by topic
+- **Automatic Topics**: New chats are auto-sorted into a matching topic, or offered a pick of candidates — no manual filing
+- **Context-Aware**: Maintains AI-generated summaries for each diary and topic
+- **Notes**: Save a message as pure context — kept for the diary, no AI reply
 - **Daily Summaries**: Automatically updates summaries via cron daily
 - **API Key Auth**: Secure access with Bearer token authentication
-- **Web Interface**: Chat UI at the root URL
+- **Web Interface**: Chat UI with light and dark themes, polished for mobile too
 
 ## Setup
 
