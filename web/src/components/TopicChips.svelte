@@ -17,8 +17,9 @@ interface Props {
  * Topic chip row for the active diary, most recently updated first. Chips past the
  * row's width collapse behind an edge chevron that expands a multiline extension
  * panel below the row: the same full chips (rename/delete kebab on every entry, freshness dot
- * on non-selected ones) plus a search input filtering that extension by title or micro summary.
- * On mobile the strip chips keep the kebab only on the selected topic. The
+ * on non-selected ones) plus a search input that searches all topics of the diary by title or
+ * micro summary, including ones already visible in the strip. On mobile the strip chips keep
+ * the kebab only on the selected topic. The
  * panel closes — and the search resets — when a topic is picked or a click lands
  * outside it. The plus chip exits the current topic so the next message gets a
  * new auto-generated topic.
@@ -45,23 +46,18 @@ const overflow = createOverflowSplit({
 	gapPx: 6,
 })
 
-// Extension contents: only the topics the inline row could not fit. The search
-// narrows this slice by title or micro summary; visible row chips are never filtered.
+// Extension contents: the topics the inline row could not fit — or, when nothing overflows,
+// the full list. A search query widens the panel to every topic of the diary matching by title
+// or micro summary, including ones already visible in the strip.
 const extendedTopics = $derived.by(() => {
-	if (overflow.breakIndex === null) return []
-	const slice = orderedTopics.slice(overflow.breakIndex)
 	const q = search.trim().toLowerCase()
-	if (!q) return slice
-	return slice.filter(
-		(topic) =>
-			topic.name.toLowerCase().includes(q) ||
-			(topic.micro_summary ?? "").toLowerCase().includes(q),
-	)
-})
-
-// The extension only makes sense while the row actually overflows.
-$effect(() => {
-	if (overflow.breakIndex === null && extendedOpen) closeExtended()
+	if (q)
+		return orderedTopics.filter(
+			(topic) =>
+				topic.name.toLowerCase().includes(q) ||
+				(topic.micro_summary ?? "").toLowerCase().includes(q),
+		)
+	return orderedTopics.slice(overflow.breakIndex ?? 0)
 })
 
 function toggleExtended() {
@@ -69,7 +65,6 @@ function toggleExtended() {
 		closeExtended()
 		return
 	}
-	if (overflow.breakIndex === null) return
 	extendedOpen = true
 	// Desktop only: focusing the search on mobile would pop the keyboard unprompted.
 	if (window.matchMedia("(min-width: 768px)").matches) tick().then(() => searchEl?.focus())
@@ -140,13 +135,9 @@ function pick(topic: TopicSummary) {
 				New topic
 			</button>
 		{/if}
-		<div
-			bind:this={moreEl}
-			data-overflow-trailing
-			class="shrink-0 {overflow.breakIndex === null ? 'invisible' : ''}"
-		>
+		<div bind:this={moreEl} data-overflow-trailing class="shrink-0">
 			<button
-				title={extendedOpen ? "Hide extended topics" : "Show all topics"}
+				title={extendedOpen ? "Hide extended topics" : "Search and show all topics"}
 				aria-label="More topics"
 				aria-expanded={extendedOpen}
 				class="flex h-7 w-7 items-center justify-center rounded-md text-faint transition-colors hover:bg-panel-2 hover:text-ink"

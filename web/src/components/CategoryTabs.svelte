@@ -22,10 +22,11 @@ interface Props {
  * dot; the extension panel carries kebabs for every entry. Tabs past the row's
  * width collapse behind an edge chevron that expands an extension panel below the strip: the
  * same full tabs (rename/delete kebab on every entry, freshness dot on non-selected ones), a
- * search input filtering the extension by name, and a "New diary" action that opens the shared
+ * search input that searches all diaries by name, and a "New diary" action that opens the shared
  * prompt modal — naming a diary never happens in place. Submitting stages a dashed ghost tab
- * that becomes real when the first message is sent. The chevron stays available even when
- * nothing overflows, so the diary list and creation are always reachable.
+ * that becomes real when the first message is sent. The strip carries a trailing "+ New"
+ * button, and the chevron stays available even when nothing overflows, so the diary list and
+ * creation are always reachable.
  */
 let { onnewcategory, onrenamecategory, ondeletecategory }: Props = $props()
 
@@ -49,16 +50,15 @@ const overflow = createOverflowSplit({
 	row: () => rowEl,
 	more: () => moreEl,
 	gapPx: 4,
-	maxRows: 1,
 })
 
 // Extension contents: the diaries the strip row could not fit — or, when nothing overflows,
-// the full list. The search narrows the slice by name; visible strip tabs are never filtered.
+// the full list. A search query widens the panel to every diary matching by name, including
+// ones already visible in the strip.
 const extendedCategories = $derived.by(() => {
-	const slice = orderedCategories.slice(overflow.breakIndex ?? 0)
 	const q = search.trim().toLowerCase()
-	if (!q) return slice
-	return slice.filter((cat) => cat.name.toLowerCase().includes(q))
+	if (q) return orderedCategories.filter((cat) => cat.name.toLowerCase().includes(q))
+	return orderedCategories.slice(overflow.breakIndex ?? 0)
 })
 
 function toggleExtended() {
@@ -154,8 +154,8 @@ function requestNew() {
 					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
 				</button>
 			</div>
-		{:else if orderedCategories.length === 0 && ui.canMutate}
-			<!-- First-use affordance: with no diaries at all, creation must be visible in the strip. -->
+		{:else if ui.canMutate}
+			<!-- Creation stays a trailing control: reserved space keeps it visible even when the row overflows. -->
 			<button
 				data-overflow-trailing
 				class="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm text-faint transition-colors hover:bg-panel-2 hover:text-ink"
