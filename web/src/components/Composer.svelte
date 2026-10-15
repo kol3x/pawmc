@@ -10,8 +10,9 @@ interface Props {
  * Message composer: auto-growing textarea (generously sized by default) with two send buttons
  * anchored to opposite ends of the composer's right edge — "Send" at the bottom posts a normal
  * message, "Send note" at the top posts it as a kept-as-context note with no reply (also via
- * Ctrl/Cmd+Enter, no mouse needed). On touch devices the keyboard has no Shift/Ctrl, so Enter
- * falls through to its default newline behavior and sending happens only via the buttons.
+ * Ctrl/Cmd+Enter, no mouse needed). A tiny caption sits directly beneath the note button —
+ * its icon-only affordance is otherwise ambiguous, and touch users get neither hover titles
+ * nor keybind hints.
  * Category and topic naming live in the header's tab/chip rows; the composer only sends.
  */
 let { onsend }: Props = $props()
@@ -87,16 +88,19 @@ async function send(noteMode = false) {
 				{/if}
 			</div>
 		</div>
-		<div class="flex shrink-0 flex-col justify-between gap-1.5 self-stretch">
-			<button
-				class="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
-				disabled={!draft.trim() || app.sending}
-				onclick={() => void send(true)}
-				aria-label="Send note"
-				title="Save as a note — kept as context, no reply ({noteKeyHint})"
-			>
-				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-			</button>
+		<div class="flex shrink-0 flex-col items-center justify-between gap-1.5 self-stretch">
+			<div class="flex shrink-0 flex-col items-center gap-1">
+				<button
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+					disabled={!draft.trim() || app.sending}
+					onclick={() => void send(true)}
+					aria-label="Send note"
+					title="Save as a note — kept as context, no reply ({noteKeyHint})"
+				>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+				</button>
+				<p class="w-20 shrink-0 select-none text-center text-[9px] leading-snug text-faint">Sends as a note, no reply</p>
+			</div>
 			<button
 				class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white transition-colors hover:bg-accent/85 disabled:opacity-40"
 				disabled={!draft.trim() || app.sending}
