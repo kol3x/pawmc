@@ -95,7 +95,9 @@ class DemoState {
 			case "dayPass":
 				return "Day's done. In the real app the summarization runs nightly, so let's imagine we came back the other day."
 			case "newConversation":
-				return "Memory updated, you can see it on the left-hand side. Your yesterday's conversation was summarized into 'topic memory', which in turn was used to generate a higher level 'diary memory'. You can later pick diaries and topics, depending on what context you want behind your new chat. Now start a new, unrelated conversation."
+				return ui.desktop
+					? "Memory updated, you can see it in the memory panel on the left. Your yesterday's conversation was summarized into 'topic memory', which in turn was used to generate a higher level 'diary memory'. You can later pick diaries and topics, depending on what context you want behind your new chat. Now start a new, unrelated conversation."
+					: "Memory updated — tap the open book in the header to see it. Your yesterday's conversation was summarized into 'topic memory', which in turn was used to generate a higher level 'diary memory'. You can later pick diaries and topics, depending on what context you want behind your new chat. Now start a new, unrelated conversation."
 			case "day2":
 				return "Since it's unrelated - it will be placed under a new topic, and only get the diary memory - a higher level one. You aren't starting from zero context anymore."
 			case "finale":
