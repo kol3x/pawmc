@@ -18,12 +18,14 @@ interface Props {
 /**
  * Diary tab strip: diaries are the base of the interface — always visible and selectable,
  * single row, ordered most recently updated first (summary freshness) with the active diary
- * pinned to the front. Tabs past the row's width collapse behind an edge chevron that expands
- * an extension panel below the strip: the same full tabs (freshness dot, rename/delete kebab),
- * a search input filtering the extension by name, and a "New diary" action that opens the
- * shared prompt modal — naming a diary never happens in place. Submitting stages a dashed
- * ghost tab that becomes real when the first message is sent. The chevron stays available even
- * when nothing overflows, so the diary list and creation are always reachable.
+ * pinned to the front. On mobile only the active tab keeps its kebab and drops its freshness
+ * dot; the extension panel carries kebabs for every entry. Tabs past the row's
+ * width collapse behind an edge chevron that expands an extension panel below the strip: the
+ * same full tabs (rename/delete kebab on every entry, freshness dot on non-selected ones), a
+ * search input filtering the extension by name, and a "New diary" action that opens the shared
+ * prompt modal — naming a diary never happens in place. Submitting stages a dashed ghost tab
+ * that becomes real when the first message is sent. The chevron stays available even when
+ * nothing overflows, so the diary list and creation are always reachable.
  */
 let { onnewcategory, onrenamecategory, ondeletecategory }: Props = $props()
 
@@ -89,10 +91,10 @@ function requestNew() {
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && extendedOpen && closeExtended()} />
 
-{#snippet chip(cat: CategorySummary, hidden = false)}
+{#snippet chip(cat: CategorySummary, hidden = false, withMenu = false)}
 	<div
 		data-overflow-item
-		class="flex shrink-0 items-center gap-1 rounded-lg py-1.5 transition-colors {ui.canMutate ? 'pr-1' : 'pr-2.5'} {app.categoryId === cat.id
+		class="flex shrink-0 items-center gap-1 rounded-lg py-1.5 transition-colors {withMenu && ui.canMutate ? 'pr-1' : 'pr-2.5'} {app.categoryId === cat.id
 			? 'bg-accent-soft text-accent'
 			: 'text-dim hover:bg-panel-2 hover:text-ink'} {hidden ? 'hidden' : ''}"
 	>
@@ -104,9 +106,11 @@ function requestNew() {
 			aria-selected={app.categoryId === cat.id}
 		>
 			{cat.name}
-			<FreshnessDot ts={cat.updated_at_timestamp} />
+			{#if ui.desktop || app.categoryId !== cat.id}
+				<FreshnessDot ts={cat.updated_at_timestamp} />
+			{/if}
 		</button>
-		{#if ui.canMutate}
+		{#if withMenu && ui.canMutate}
 			<Menu
 				label="Diary actions"
 				items={[
@@ -131,7 +135,7 @@ function requestNew() {
 			<div class="px-2 py-2 text-xs text-faint">Loading…</div>
 		{:else}
 			{#each orderedCategories as cat, i (cat.id)}
-				{@render chip(cat, overflow.breakIndex !== null && i >= overflow.breakIndex)}
+				{@render chip(cat, overflow.breakIndex !== null && i >= overflow.breakIndex, ui.desktop || app.categoryId === cat.id)}
 			{/each}
 		{/if}
 		{#if app.pendingCategoryName}
@@ -195,7 +199,7 @@ function requestNew() {
 			/>
 			<div class="flex max-h-64 flex-wrap gap-1.5 overflow-y-auto">
 				{#each extendedCategories as cat (cat.id)}
-					{@render chip(cat)}
+					{@render chip(cat, false, true)}
 				{/each}
 				{#if extendedCategories.length === 0}
 					<p class="px-1 py-1 text-xs text-faint">No matching diaries</p>

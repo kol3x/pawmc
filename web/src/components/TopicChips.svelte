@@ -16,8 +16,9 @@ interface Props {
 /**
  * Topic chip row for the active diary, most recently updated first. Chips past the
  * row's width collapse behind an edge chevron that expands a multiline extension
- * panel below the row: the same full chips (freshness dot, rename/delete kebab)
- * plus a search input filtering that extension by title or micro summary. The
+ * panel below the row: the same full chips (rename/delete kebab on every entry, freshness dot
+ * on non-selected ones) plus a search input filtering that extension by title or micro summary.
+ * On mobile the strip chips keep the kebab only on the selected topic. The
  * panel closes — and the search resets — when a topic is picked or a click lands
  * outside it. The plus chip exits the current topic so the next message gets a
  * new auto-generated topic.
@@ -88,10 +89,10 @@ function pick(topic: TopicSummary) {
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && extendedOpen && closeExtended()} />
 
-{#snippet chip(topic: TopicSummary, hidden = false)}
+{#snippet chip(topic: TopicSummary, hidden = false, withMenu = false)}
 	<div
 		data-overflow-item
-		class="flex shrink-0 items-center gap-1 rounded-full border py-1 text-xs transition-colors {ui.canMutate ? 'pr-1' : 'pr-2.5'} {app.topicId === topic.id
+		class="flex shrink-0 items-center gap-1 rounded-full border py-1 text-xs transition-colors {withMenu && ui.canMutate ? 'pr-1' : 'pr-2.5'} {app.topicId === topic.id
 			? 'border-accent/50 bg-accent-soft text-accent'
 			: 'border-line text-dim hover:border-accent/40 hover:text-ink'} {hidden ? 'hidden' : ''}"
 	>
@@ -101,9 +102,11 @@ function pick(topic: TopicSummary) {
 			title={topic.micro_summary || topic.summary || topic.name}
 		>
 			<span class="max-w-48 truncate">{topic.name}</span>
-			<FreshnessDot ts={topic.updated_at_timestamp} />
+			{#if ui.desktop || app.topicId !== topic.id}
+				<FreshnessDot ts={topic.updated_at_timestamp} />
+			{/if}
 		</button>
-	{#if ui.canMutate}
+	{#if withMenu && ui.canMutate}
 		<Menu
 			label="Topic actions"
 			items={[
@@ -124,7 +127,7 @@ function pick(topic: TopicSummary) {
 		aria-label="Topics"
 	>
 		{#each orderedTopics as topic, i (topic.id)}
-			{@render chip(topic, overflow.breakIndex !== null && i >= overflow.breakIndex)}
+			{@render chip(topic, overflow.breakIndex !== null && i >= overflow.breakIndex, ui.desktop || app.topicId === topic.id)}
 		{/each}
 		{#if ui.canMutate && app.topicId !== null}
 			<button
@@ -174,7 +177,7 @@ function pick(topic: TopicSummary) {
 			/>
 			<div class="flex max-h-64 flex-wrap gap-1.5 overflow-y-auto">
 				{#each extendedTopics as topic (topic.id)}
-					{@render chip(topic)}
+					{@render chip(topic, false, true)}
 				{/each}
 				{#if extendedTopics.length === 0}
 					<p class="px-1 py-1 text-xs text-faint">No matching topics</p>
