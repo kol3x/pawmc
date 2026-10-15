@@ -24,6 +24,14 @@ class UiState {
 	showSettings = $derived(!this.demoActive)
 	/** Talking to the real backend for data loads (boot fetch, recovery probes). The demo serves fake data through the same paths instead. */
 	liveData = $derived(!this.demoActive)
+	/** Desktop layout (md+): the diary strip keeps the active diary inline; mobile moves it into the header row. Kept as state so render lists react to it — CSS-hidden items would still pollute overflow measurement. */
+	desktop = $state(true)
 }
 
 export const ui = new UiState()
+
+// Track the md breakpoint so layout branches render the right list from the start;
+// changes (rotation, window resize) re-render whatever derived lists read this.
+const desktopQuery = window.matchMedia("(min-width: 768px)")
+ui.desktop = desktopQuery.matches
+desktopQuery.addEventListener("change", (e) => (ui.desktop = e.matches))

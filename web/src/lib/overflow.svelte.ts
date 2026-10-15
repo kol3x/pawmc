@@ -17,20 +17,22 @@ export interface OverflowSplit {
 }
 
 /**
- * Splits a single-row flex strip into a visible prefix and an edge overflow dropdown.
+ * Splits a single-row flex strip into a visible prefix and an edge overflow extension.
+ *
+ * The strip is a one-line flex row; the first item whose right edge crosses the remaining
+ * capacity (strip width minus trailing widths, gaps, and right padding) starts the overflow.
  *
  * Contract for the caller's markup:
- * - the strip has `relative overflow-hidden` and every collapsible child carries
- *   `data-overflow-item`, hidden with `hidden` once its index reaches breakIndex;
- * - always-visible trailing controls (staging/new buttons and the dropdown wrapper)
+ * - every collapsible child carries `data-overflow-item`, hidden with `hidden` once its index
+ *   reaches breakIndex;
+ * - always-visible trailing controls (staging/new buttons and the overflow-toggle wrapper)
  *   carry `data-overflow-trailing`;
- * - the dropdown wrapper renders unconditionally and toggles `invisible` when
- *   breakIndex is null, so its reserved width stays stable across measure passes.
+ * - the toggle wrapper renders unconditionally and toggles `invisible` when breakIndex is
+ *   null, so its reserved width stays stable across measure passes.
  *
- * Measurement runs after DOM updates: breakIndex resets to null so every item
- * renders, then the first item whose right edge crosses the remaining capacity
- * (strip width minus trailing widths, gaps, and right padding) starts the
- * overflow. A ResizeObserver on the strip re-runs the split on width changes.
+ * Measurement runs after DOM updates: breakIndex resets to null so every item renders, then
+ * the first item past capacity starts the overflow. A ResizeObserver on the strip re-runs
+ * the split on width changes.
  */
 export function createOverflowSplit(options: OverflowSplitOptions): OverflowSplit {
 	const split = $state<OverflowSplit>({ breakIndex: null })
