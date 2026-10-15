@@ -245,7 +245,11 @@
 	<div class="flex h-dvh flex-col overflow-hidden">
 		<header class="border-b border-line bg-panel/60 pt-2">
 			<div class="flex items-center gap-1">
-				<h1 class="shrink-0 pl-4 pr-1 font-serif text-sm font-semibold tracking-tight">pawmc</h1>
+				<button
+					class="shrink-0 cursor-pointer py-1 pl-4 pr-1 font-serif text-sm font-semibold tracking-tight transition-colors hover:text-accent"
+					title="Home — reload the app"
+					onclick={() => window.location.assign("/")}
+				>pawmc</button>
 				<div class="min-w-0 flex-1">
 					<CategoryTabs
 						onrenamecategory={onRenameCategory}

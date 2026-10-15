@@ -70,7 +70,8 @@ function toggleExtended() {
 	}
 	if (overflow.breakIndex === null) return
 	extendedOpen = true
-	tick().then(() => searchEl?.focus())
+	// Desktop only: focusing the search on mobile would pop the keyboard unprompted.
+	if (window.matchMedia("(min-width: 768px)").matches) tick().then(() => searchEl?.focus())
 }
 
 /** Closes the extension and clears the search so the next open starts fresh. */
@@ -125,7 +126,7 @@ function pick(topic: TopicSummary) {
 		{#each orderedTopics as topic, i (topic.id)}
 			{@render chip(topic, overflow.breakIndex !== null && i >= overflow.breakIndex)}
 		{/each}
-		{#if ui.canMutate}
+		{#if ui.canMutate && app.topicId !== null}
 			<button
 				data-overflow-trailing
 				class="flex shrink-0 items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs text-faint transition-colors hover:border-accent/40 hover:text-ink"

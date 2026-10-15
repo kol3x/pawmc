@@ -7,9 +7,11 @@ interface Props {
 }
 
 /**
- * Message composer: auto-growing textarea (generously sized by default) with two stacked
- * send buttons on the right — "Send" posts a normal message, "Send note" posts it as a
- * kept-as-context note with no reply (also via Ctrl/Cmd+Enter, no mouse needed).
+ * Message composer: auto-growing textarea (generously sized by default) with two send buttons
+ * anchored to opposite ends of the composer's right edge — "Send" at the bottom posts a normal
+ * message, "Send note" at the top posts it as a kept-as-context note with no reply (also via
+ * Ctrl/Cmd+Enter, no mouse needed). On touch devices the keyboard has no Shift/Ctrl, so Enter
+ * falls through to its default newline behavior and sending happens only via the buttons.
  * Category and topic naming live in the header's tab/chip rows; the composer only sends.
  */
 let { onsend }: Props = $props()
@@ -20,6 +22,9 @@ let textareaEl = $state<HTMLTextAreaElement | null>(null)
 /** Macs use Cmd+Enter for the note keybind — plain Ctrl+Enter opens the context menu there. */
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
 const noteKeyHint = isMac ? "⌘+Enter" : "Ctrl+Enter"
+
+/** Touch-primary devices: the virtual keyboard has no Shift/Ctrl, so Enter must stay a newline. */
+const isCoarse = window.matchMedia("(pointer: coarse)").matches
 
 export function focus() {
 	textareaEl?.focus()
@@ -38,6 +43,7 @@ function autoGrow() {
 }
 
 function onKeydown(e: KeyboardEvent) {
+	if (isCoarse) return
 	if (e.isComposing) return
 	if (e.key !== "Enter" || e.shiftKey) return
 	const wantsNote = isMac ? e.metaKey : e.ctrlKey
@@ -76,12 +82,12 @@ async function send(noteMode = false) {
 			<div class="absolute bottom-2 right-2.5 text-[10px] leading-none text-faint">
 				{#if app.sending}
 					<svg class="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.6" /></svg>
-				{:else}
+				{:else if !isCoarse}
 					Enter
 				{/if}
 			</div>
 		</div>
-		<div class="flex shrink-0 flex-col gap-1.5">
+		<div class="flex shrink-0 flex-col justify-between gap-1.5 self-stretch">
 			<button
 				class="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
 				disabled={!draft.trim() || app.sending}
@@ -103,6 +109,8 @@ async function send(noteMode = false) {
 		</div>
 	</div>
 	<div class="mt-1.5 hidden px-1 text-[10px] text-faint sm:flex">
-		<span>Enter to send · {noteKeyHint} to send a note · Shift+Enter for a new line</span>
+		{#if !isCoarse}
+			<span>Enter to send · {noteKeyHint} to send a note · Shift+Enter for a new line</span>
+		{/if}
 	</div>
 </div>

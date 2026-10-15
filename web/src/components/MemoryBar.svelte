@@ -24,15 +24,14 @@ interface Props {
 /**
  * Left memory panel: the active topic's memory and the category overview as content-sized
  * cards. Large summaries show their opening paragraph with the rest folded behind a
- * "Show more" toggle; empty summaries render as one compact line. A mobile-only tab switcher
- * shows one card at a time; both cards stay stacked on md+ screens.
+ * "Show more" toggle; empty summaries render as one compact line. Both the topic card and
+ * the diary overview card stay stacked vertically on all screen sizes.
  */
 let { onclose }: Props = $props()
 let editing = $state<SummaryType | null>(null)
 let editText = $state("")
 let forgetType = $state<SummaryType | null>(null)
 let refreshing = $state(false)
-let mobileTab = $state<"topic" | "category">("topic")
 
 const topic = $derived(app.selectedTopic)
 const category = $derived(app.selectedCategory)
@@ -136,18 +135,6 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 			{/if}
 		</div>
 	</div>
-	{#if category}
-		<div class="flex gap-1 border-b border-line px-3 py-2 md:hidden">
-			<button
-				class="flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors {mobileTab === 'topic' ? 'bg-accent-soft text-accent' : 'text-dim hover:bg-panel-2 hover:text-ink'}"
-				onclick={() => (mobileTab = "topic")}
-			>Topic memory</button>
-			<button
-				class="flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors {mobileTab === 'category' ? 'bg-accent-soft text-accent' : 'text-dim hover:bg-panel-2 hover:text-ink'}"
-				onclick={() => (mobileTab = "category")}
-			>Overview</button>
-		</div>
-	{/if}
 	<div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
 		{#if !category}
 			<p class="px-1 text-xs leading-relaxed text-faint">
@@ -156,7 +143,7 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 		{:else}
 			{#if topic}
 				{#if editing === "topic"}
-					<div class="flex flex-col rounded-xl border border-line bg-panel p-3 {mobileTab === 'topic' ? 'flex' : 'hidden'} md:flex">
+					<div class="flex flex-col rounded-xl border border-line bg-panel p-3">
 						<textarea
 							bind:value={editText}
 							rows="8"
@@ -168,7 +155,7 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 						</div>
 					</div>
 				{:else if topicFolded}
-					<div class="flex flex-col rounded-xl border border-line bg-panel {mobileTab === 'topic' ? 'flex' : 'hidden'} md:flex">
+					<div class="flex flex-col rounded-xl border border-line bg-panel">
 						<div class="flex items-center gap-2 border-b border-line px-3 py-2">
 							<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Topic memory</h3>
 							<span class="text-[10px] text-faint">{relativeTime(topic.updated_at_timestamp)}</span>
@@ -187,7 +174,7 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 					</div>
 					</div>
 				{:else}
-					<div class="flex items-center gap-2 px-1 {mobileTab === 'topic' ? '' : 'hidden'} md:flex">
+					<div class="flex items-center gap-2 px-1">
 						<p class="text-xs text-faint">No memory yet — it builds as you talk.</p>
 						{#if ui.canMutate}
 							<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "topic", label: "Topic memory", summary: "", meta: "", id: topic.id })}>
@@ -197,10 +184,10 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 					</div>
 				{/if}
 			{:else}
-				<p class="px-1 text-xs text-faint {mobileTab === 'topic' ? '' : 'hidden'} md:block">No topic selected — memory appears once a topic is active.</p>
+				<p class="px-1 text-xs text-faint">No topic selected — memory appears once a topic is active.</p>
 			{/if}
 			{#if editing === "category"}
-				<div class="flex flex-col rounded-xl border border-line bg-panel p-3 {mobileTab === 'category' ? 'flex' : 'hidden'} md:flex">
+				<div class="flex flex-col rounded-xl border border-line bg-panel p-3">
 					<textarea
 						bind:value={editText}
 						rows="8"
@@ -212,7 +199,7 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 					</div>
 				</div>
 			{:else if categoryFolded}
-				<div class="flex flex-col rounded-xl border border-line bg-panel {mobileTab === 'category' ? 'flex' : 'hidden'} md:flex">
+				<div class="flex flex-col rounded-xl border border-line bg-panel">
 					<div class="flex items-center gap-2 border-b border-line px-3 py-2">
 						<h3 class="text-xs font-semibold uppercase tracking-wide text-dim">Diary memory</h3>
 						<span class="text-[10px] text-faint">{relativeTime(category.updated_at_timestamp)}</span>
@@ -231,7 +218,7 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 					</div>
 				</div>
 			{:else}
-				<div class="flex items-center gap-2 px-1 {mobileTab === 'category' ? '' : 'hidden'} md:flex">
+				<div class="flex items-center gap-2 px-1">
 					<p class="text-xs text-faint">No diary memory yet — it builds from topic memories.</p>
 					{#if ui.canMutate}
 						<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "category", label: "Diary memory", summary: "", meta: "", id: category.id })}>
