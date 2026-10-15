@@ -1,5 +1,5 @@
 <script lang="ts">
-import { freshness } from "../lib/freshness"
+import { freshness, relativeTime } from "../lib/freshness"
 
 interface Props {
 	ts: number
@@ -8,6 +8,7 @@ interface Props {
 
 /**
  * Color-coded summary freshness dot (green < 1d, amber < 1w, orange < 1mo, gray older/never).
+ * Hovering shows when the summary was last updated so the color scale has an anchor.
  */
 let { ts, size = "sm" }: Props = $props()
 
@@ -24,4 +25,4 @@ const color = $derived(
 const dims = $derived(size === "sm" ? "h-1.5 w-1.5" : "h-2 w-2")
 
 </script>
-<span class="inline-block shrink-0 rounded-full {dims} {color}"></span>
+<span class="inline-block shrink-0 rounded-full {dims} {color}" title={ts ? `Memory updated ${relativeTime(ts)}` : "Memory never updated"}></span>

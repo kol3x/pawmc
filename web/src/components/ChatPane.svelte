@@ -226,7 +226,7 @@ function restoreDraft(draft: string) {
 						? "Memory holds this topic's context — new messages continue below."
 						: "Messages you send appear here and build this topic's memory."}
 				{:else}
-					Send your first message — a topic is created for it automatically, or pick one above.
+					Send a message and it lands in a topic automatically — or pick a topic from the chips above first.
 				{/if}
 			</p>
 			</div>

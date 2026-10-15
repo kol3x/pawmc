@@ -73,9 +73,9 @@ async function refreshAll() {
 		await api("POST", "/update-summaries")
 		await app.loadCategories(true)
 		await app.loadStream()
-		pushToast("Memory refreshed", "success")
+		pushToast("Memory up to date", "success")
 	} catch (err) {
-		pushToast(`Couldn't refresh memory — ${errorMessage(err)}`, "error")
+		pushToast(`Couldn't bring memory up to date — ${errorMessage(err)}`, "error")
 	} finally {
 		refreshing = false
 	}
@@ -118,10 +118,10 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 					class="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-panel-2 hover:text-ink disabled:opacity-40"
 					disabled={refreshing}
 					onclick={() => void refreshAll()}
-					title="Rebuild memory from your conversations"
+					title="Fold recent conversations into memory now"
 				>
 					<svg class={refreshing ? "animate-spin" : ""} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
-					Refresh
+					Bring memory up to date
 				</button>
 			{/if}
 			{#if onclose}
@@ -175,7 +175,7 @@ function forgetCard(type: SummaryType | null): MemoryCard | null {
 					</div>
 				{:else}
 					<div class="flex items-center gap-2 px-1">
-						<p class="text-xs text-faint">No memory yet — it builds as you talk.</p>
+						<p class="text-xs text-faint">No memory yet — it builds from your conversations daily at 00:00 UTC, or when you bring it up to date.</p>
 						{#if ui.canMutate}
 							<button class="shrink-0 text-faint transition-colors hover:text-ink" title="Write memory" onclick={() => startEdit({ type: "topic", label: "Topic memory", summary: "", meta: "", id: topic.id })}>
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
