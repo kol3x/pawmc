@@ -10,11 +10,12 @@ It's simple and lightweight, and you own your data, pick your model, and control
 
 ![pawmc — diaries as tabs, auto-generated topics as chips, and the memory panel on the left](docs/screenshot.png)
 
-## Related posts
+## Related writing
 
 - [Dear LLM, or how I stopped getting generic advice](https://kol3x.com/blog/dear-llm-or-how-i-stopped-getting-generic-advice/) — the story behind pawmc
+- [Design before building, or my first finished product](https://kol3x.com/blog/design-before-building-or-my-first-finished-product/) — on development process behind pawmc's latest version
 - [Making LLMs not eat my food, or how I picked up TS](https://kol3x.com/blog/making-llms-not-eat-my-food-or-how-i-picked-up-ts/) — on migrating pawmc to TS
-- [Development updates on X](https://x.com/kol3xcom) — follow along as pawmc evolves
+- [Development updates on X](https://x.com/kol3xcom) — tiny thoughts as I develop pawmc
 
 ## Key advantages
 
