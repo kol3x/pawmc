@@ -206,7 +206,7 @@ function restoreDraft(draft: string) {
 					a "personal" diary. Each day folds into memory at midnight UTC.
 				</p>
 			</div>
-		{:else if !app.selectedCategory && !app.pendingCategoryName}
+		{:else if !ui.demoActive && !app.selectedCategory && !app.pendingCategoryName}
 			<div class="flex h-full items-center justify-center">
 				<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
 					Pick a diary above, or start a new one with the + chip. A diary begins with your first message.
@@ -216,7 +216,7 @@ function restoreDraft(draft: string) {
 			<div class="flex h-full items-center justify-center">
 				<svg class="animate-spin text-faint" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
 			</div>
-		{:else}
+		{:else if !ui.demoActive}
 			<div class="flex h-full items-center justify-center">
 				<p class="max-w-xs text-center font-serif text-xs leading-relaxed text-faint">
 				{#if app.pendingCategoryName}

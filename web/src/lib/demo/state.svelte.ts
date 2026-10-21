@@ -87,7 +87,7 @@ class DemoState {
 	guidance = $derived.by(() => {
 		switch (this.phase) {
 			case "beat1":
-				return "On day 1 pawmc has no context. You'd start by giving it some general info."
+				return "On day 1 pawmc has no context. You'd start by giving it some general info. Click the draft below to send it."
 			case "beat2":
 				return "It guessed and got part of it wrong. You correct it once and it will remember."
 			case "beat3":
@@ -159,6 +159,8 @@ class DemoState {
 		await app.loadCategories()
 		await app.loadStream()
 		this.phase = "newConversation"
+		// Day 2: the memory panel only becomes visible here — day 1 keeps the demo distraction-free.
+		app.memoryHidden = false
 		ui.spotlightMemory = true
 	}
 
@@ -354,6 +356,8 @@ export async function startDemo(): Promise<void> {
 	toggleDemoRouterBind(demoRouter)
 	bindChatExecutor(demoChatExecutor)
 	seedDb()
+	// Day 1 has nothing to show in memory — hide the panel until the day pass fills it.
+	app.memoryHidden = true
 	await app.loadCategories()
 	app.selectCategory(DIARY_ID)
 	mountDemoRoot()
