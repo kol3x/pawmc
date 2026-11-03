@@ -17,10 +17,10 @@
 		"gen:demo": "node scripts/gen-demo.mjs"
 	},
 	"devDependencies": {
-		"@cloudflare/vitest-plugin": "1.1.11",
+		"@cloudflare/vitest-plugin": "1.5.0",
 		"typescript": "7.0.2",
 		"vitest": "4.1.11",
-		"wrangler": "4.133.0"
+		"wrangler": "4.156.2"
 	},
 	"dependencies": {
 		"zod": "^4.5.4"
